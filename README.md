@@ -6,10 +6,8 @@ A beautiful Flutter mobile application built with ❤️.
 ![Dart](https://img.shields.io/badge/Dart-%230175C2.svg?style=for-the-badge&logo=Dart&logoColor=white)
 
 ## ✨ Features
-- List your main features here
-- Example: Beautiful UI
-- Example: Offline support
-- Example: Fast performance
+Offline Access
+Clear and not so Accurate TTS
 
 ## 📥 Download APK
 
