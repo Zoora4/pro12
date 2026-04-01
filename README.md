@@ -13,7 +13,7 @@ Clear and not so Accurate TTS
 
 You can download the latest version of the app here:
 
-**[⬇️ Download Latest APK](https://github.com/Zoora4/pro12/releases/download/v1/Readify.v1.apk)**
+**[⬇️ Download Latest APK](https://github.com/Zoora4/pro12/releases/download/v2/Readify.v2.apk)**
 
 > **Note**: After downloading, allow "Install from unknown sources" in your phone settings.
 
