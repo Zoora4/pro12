@@ -43,5 +43,5 @@ app.*.map.json
 /android/app/debug
 /android/app/profile
 /android/app/release
-# Ignore large TTS models
+# Large ML models - exclude from repo (500MB is too big for Git/GitHub)
 assets/models/
