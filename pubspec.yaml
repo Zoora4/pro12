@@ -16,8 +16,7 @@ publish_to: 'none' # Remove this line if you wish to publish to pub.dev
 # https://developer.apple.com/library/archive/documentation/General/Reference/InfoPlistKeyReference/Articles/CoreFoundationKeys.html
 # In Windows, build-name is used as the major, minor, and patch parts
 # of the product and file versions while build-number is used as the build suffix.
-version: 1.0.0+1
-
+version: 1.0.0+2
 environment:
   sdk: ^3.10.7
 
@@ -52,6 +51,7 @@ dependencies:
   # The following adds the Cupertino Icons font to your application.
   # Use with the CupertinoIcons class for iOS style icons.
   cupertino_icons: ^1.0.8
+  flutter_launcher_icons: ^0.14.4
 
 dev_dependencies:
   flutter_test:
@@ -77,26 +77,21 @@ flutter:
   
   assets:
     - assets/12.png
-    - assets/models/converted/en_US-lessac-medium.onnx
-    - assets/models/converted/tokens.txt
-    - assets/models/converted/espeak-ng-data/
-    - assets/models/converted/espeak-ng-data/en_dict
-    - assets/models/converted/espeak-ng-data/intonations
-    - assets/models/converted/espeak-ng-data/phondata
-    - assets/models/converted/espeak-ng-data/phondata-manifest
-    - assets/models/converted/espeak-ng-data/phonindex
-    - assets/models/converted/espeak-ng-data/phontab
-    - assets/12.png
-    - assets/models/converted/en_US-lessac-medium.onnx
-    - assets/models/converted/tokens.txt
-    - assets/models/converted/espeak-ng-data/en_dict
-    - assets/models/converted/espeak-ng-data/intonations
-    - assets/models/converted/espeak-ng-data/phondata
-    - assets/models/converted/espeak-ng-data/phondata-manifest
-    - assets/models/converted/espeak-ng-data/phonindex
-    - assets/models/converted/espeak-ng-data/phontab
-    - assets/models/converted/espeak-ng-data/lang/gmw/
-    - assets/models/converted/espeak-ng-data/voices/!v/
+    - assets/models/en_US-lessac-medium.onnx
+    - assets/models/en_US-lessac-medium.onnx.json
+    - assets/models/tokens.txt
+    - assets/models/espeak-ng-data/
+    - assets/models/espeak-ng-data/lang/
+    - assets/models/espeak-ng-data/lang/en/
+    - assets/models/en_GB-alan-medium.onnx
+    - assets/models/en_GB-alan-medium.onnx.json
+    - assets/models/en_US-amy-medium.onnx
+    - assets/models/en_US-amy-medium.onnx.json
+
+flutter_launcher_icons:
+  android: true
+  image_path: "assets/12.png"     # path to your icon
+  adaptive_icon_foreground: "assets/12.png"
   
 
   # An image asset can refer to one or more resolution-specific "variants", see
