@@ -4,12 +4,13 @@ import 'package:flutter/services.dart';
 
 import '../camera/image_region_screen.dart';
 import '../../services/piper_tts_service.dart';
+import '../../services/speech_recognition_service.dart';
 import 'analyze_controller.dart';
 
-// ── Easy-to-tweak position for the re-select FAB ──────────────
-// Increase _kFabBottomOffset to move it higher above the bottom bar
+// ── Easy-to-tweak position constants ─────────────────────────
 const double _kFabBottomOffset = 16.0;
 const double _kFabRightOffset  = 16.0;
+const double _kFabLeftOffset   = 16.0;
 
 class AnalyzeScreen extends StatefulWidget {
   final String filePath;
@@ -32,14 +33,13 @@ class AnalyzeScreen extends StatefulWidget {
 class _AnalyzeScreenState extends State<AnalyzeScreen>
     with WidgetsBindingObserver {
   late AnalyzeController controller;
-  bool _isExiting = false;
-  bool _loaded = false;
+  bool _isExiting        = false;
+  bool _loaded           = false;
   bool _isSwitchingVoice = false;
 
   // ── Text customization defaults ───────────────────────────────
-  // Bumped up from 15 → 18 for accessibility
-  static const double _defaultFontSize   = 18;
-  static const double _defaultLineHeight = 2.0;
+  static const double     _defaultFontSize   = 18;
+  static const double     _defaultLineHeight = 2.0;
   static const FontWeight _defaultFontWeight = FontWeight.w400;
 
   double     _fontSize   = _defaultFontSize;
@@ -50,11 +50,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   String _selectedText = '';
 
   final ScrollController _scrollController = ScrollController();
-  final List<GlobalKey> _sentenceKeys = [];
+  final List<GlobalKey>  _sentenceKeys     = [];
 
   // ── Bottom bar height tracker for FAB positioning ─────────────
-  final GlobalKey _bottomBarKey = GlobalKey();
-  double _bottomBarHeight = 160; // safe initial estimate
+  final GlobalKey _bottomBarKey    = GlobalKey();
+  double          _bottomBarHeight = 160;
 
   @override
   void initState() {
@@ -62,7 +62,6 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     WidgetsBinding.instance.addObserver(this);
     controller = AnalyzeController();
     _init();
-    // Measure bottom bar after first frame
     WidgetsBinding.instance.addPostFrameCallback(_measureBottomBar);
   }
 
@@ -85,8 +84,8 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     if (mounted) setState(() => _loaded = true);
   }
 
-  String get _ext   => widget.filePath.split('.').last.toLowerCase();
-  bool   get _isImg => ['jpg', 'jpeg', 'png'].contains(_ext);
+  String get _ext          => widget.filePath.split('.').last.toLowerCase();
+  bool   get _isImg        => ['jpg', 'jpeg', 'png'].contains(_ext);
   bool   get _showReselect => _isImg && widget.sourceImageFile != null;
 
   void _handleBack() {
@@ -180,7 +179,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     }
   }
 
-  // ── Voice selector ────────────────────────────────────────────
+  // ── Voice selector bottom sheet ───────────────────────────────
   void _openVoiceSelector() {
     final tts = PiperTtsService();
     showModalBottomSheet(
@@ -210,8 +209,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                             fontSize: 20, fontWeight: FontWeight.w700)),
                     const SizedBox(height: 4),
                     const Text('Choose your TTS engine and voice',
-                        style:
-                            TextStyle(fontSize: 14, color: Colors.grey)),
+                        style: TextStyle(fontSize: 14, color: Colors.grey)),
                     const SizedBox(height: 20),
                     _EngineToggle(
                       selected: tts.engine,
@@ -256,8 +254,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                           child: Text(
                             'No English voices found.\nInstall voices in system settings.',
                             textAlign: TextAlign.center,
-                            style:
-                                TextStyle(color: Colors.grey, fontSize: 15),
+                            style: TextStyle(color: Colors.grey, fontSize: 15),
                           ),
                         ),
                       )
@@ -282,7 +279,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     );
   }
 
-  // ── Text settings ─────────────────────────────────────────────
+  // ── Text settings sheet ───────────────────────────────────────
   void _openTextSettings() {
     final mq = MediaQuery.of(context);
     showModalBottomSheet(
@@ -308,7 +305,6 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                     style: TextStyle(
                         fontSize: 20, fontWeight: FontWeight.w700)),
                 const SizedBox(height: 20),
-
                 _SheetSliderRow(
                   label: 'Font size',
                   valueLabel: '${_fontSize.round()}px',
@@ -322,7 +318,6 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                     },
                   ),
                 ),
-
                 _SheetSliderRow(
                   label: 'Line spacing',
                   valueLabel: _lineHeight.toStringAsFixed(1),
@@ -336,8 +331,6 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                     },
                   ),
                 ),
-
-                // Font weight chips
                 Padding(
                   padding: const EdgeInsets.symmetric(vertical: 10),
                   child: Row(
@@ -360,8 +353,6 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                     ],
                   ),
                 ),
-
-                // Focus mode
                 Row(
                   children: [
                     const SizedBox(
@@ -386,9 +377,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                     ),
                   ],
                 ),
-
                 const Divider(height: 28),
-
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
@@ -424,8 +413,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
     );
   }
 
-  Widget _weightChip(
-      String label, FontWeight weight, StateSetter setSheet) {
+  Widget _weightChip(String label, FontWeight weight, StateSetter setSheet) {
     final selected = _fontWeight == weight;
     return GestureDetector(
       onTap: () {
@@ -435,9 +423,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       child: Container(
         padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
         decoration: BoxDecoration(
-          color: selected
-              ? const Color(0xFF38616A)
-              : Colors.grey.shade100,
+          color: selected ? const Color(0xFF38616A) : Colors.grey.shade100,
           borderRadius: BorderRadius.circular(22),
         ),
         child: Text(label,
@@ -454,7 +440,8 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   @override
   Widget build(BuildContext context) {
     final safeBottom = MediaQuery.of(context).padding.bottom;
-    final fileName = widget.filePath.split('/').last;
+    final fileName   = widget.filePath.split('/').last;
+    final tts        = PiperTtsService();
 
     return PopScope(
       canPop: false,
@@ -463,6 +450,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
       },
       child: Stack(
         children: [
+          // ── Main scaffold ────────────────────────────────────
           Scaffold(
             backgroundColor: const Color(0xFFE8EDEF),
             appBar: AppBar(
@@ -492,19 +480,16 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                         transitionBuilder: (child, anim) => SizeTransition(
                           sizeFactor: anim,
                           axisAlignment: -1,
-                          child: FadeTransition(
-                              opacity: anim, child: child),
+                          child: FadeTransition(opacity: anim, child: child),
                         ),
                         child: (controller.isReadMode &&
                                 controller.readSentences.isNotEmpty)
                             ? _ReadProgressBanner(
                                 key: const ValueKey('banner'),
                                 sentences: controller.readSentences,
-                                currentIndex:
-                                    controller.readSentenceIndex,
+                                currentIndex: controller.readSentenceIndex,
                                 isPlaying: controller.isPlaying,
-                                onStop: () =>
-                                    controller.stop(_refresh),
+                                onStop: () => controller.stop(_refresh),
                               )
                             : const SizedBox.shrink(
                                 key: ValueKey('empty')),
@@ -515,9 +500,33 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   ),
           ),
 
-          // ── Re-select FAB — positioned independently ──────────
-          // Change _kFabBottomOffset / _kFabRightOffset at the top
-          // of this file to move it without touching build logic.
+          // ── Voice Command FAB (bottom-left) ──────────────────
+          if (_loaded)
+            Positioned(
+              bottom: _bottomBarHeight + safeBottom + _kFabBottomOffset,
+              left: _kFabLeftOffset,
+              child: _VoiceCommandFab(
+                isPlaying: controller.isPlaying,
+                onPlay:  _handlePlayPause,
+                onPause: _handlePlayPause,
+                onStop: () => controller.stop(() {
+                  if (mounted) setState(() {});
+                }),
+                voices: availableVoices,
+                activeVoiceId: tts.activeVoice.id,
+                onSelectVoice: (voice) async {
+                  setState(() => _isSwitchingVoice = true);
+                  await tts.switchVoice(voice);
+                  if (mounted) setState(() => _isSwitchingVoice = false);
+                },
+                onOpenVoiceSelector: _openVoiceSelector,
+                onRefresh: () {
+                  if (mounted) setState(() {});
+                },
+              ),
+            ),
+
+          // ── Re-select FAB (bottom-right) ─────────────────────
           if (_showReselect)
             Positioned(
               bottom: _bottomBarHeight + safeBottom + _kFabBottomOffset,
@@ -525,7 +534,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               child: _ReselectFab(onTap: _reselect),
             ),
 
-          // Voice switching overlay
+          // ── Voice switching overlay ───────────────────────────
           if (_isSwitchingVoice) const _VoiceSwitchingOverlay(),
         ],
       ),
@@ -555,16 +564,14 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               state.copySelection(SelectionChangedCause.toolbar);
               state.hideToolbar();
             },
-            child: const Text('Copy',
-                style: TextStyle(fontSize: 16)),
+            child: const Text('Copy', style: TextStyle(fontSize: 16)),
           ),
           TextSelectionToolbarTextButton(
             padding: const EdgeInsets.symmetric(
                 horizontal: 20, vertical: 12),
             onPressed: () =>
                 state.selectAll(SelectionChangedCause.toolbar),
-            child: const Text('Select all',
-                style: TextStyle(fontSize: 16)),
+            child: const Text('Select all', style: TextStyle(fontSize: 16)),
           ),
           TextSelectionToolbarTextButton(
             padding: const EdgeInsets.symmetric(
@@ -588,7 +595,6 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           left: 20,
           right: 20,
           top: 20,
-          // Extra room so last sentence isn't hidden behind FAB
           bottom: _showReselect ? _bottomBarHeight + 80 : 24,
         ),
         itemCount: controller.sentences.length,
@@ -599,7 +605,6 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
   Widget _buildSentenceTile(int index) {
     final sentence = controller.sentences[index];
-
     final bool activePlaying =
         controller.isPlaying && !controller.isReadMode;
     final bool reading =
@@ -607,8 +612,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
     Color? bg;
     if (reading) {
-      bg = const Color(0xFF1D9E75)
-          .withOpacity(_focusMode ? 0.28 : 0.20);
+      bg = const Color(0xFF1D9E75).withOpacity(_focusMode ? 0.28 : 0.20);
     } else if (_focusMode && activePlaying) {
       bg = Colors.black.withOpacity(0.03);
     }
@@ -636,9 +640,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
             fontSize: _fontSize,
             height: _lineHeight,
             fontWeight: reading ? FontWeight.w700 : _fontWeight,
-            color: reading
-                ? const Color(0xFF0F6E56)
-                : Colors.black87,
+            color: reading ? const Color(0xFF0F6E56) : Colors.black87,
           ),
         ),
       ),
@@ -647,11 +649,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 
   // ── Bottom bar ────────────────────────────────────────────────
   Widget _buildBottomBar() {
-    final tts = PiperTtsService();
-    final showPitch   = tts.engine == TtsEngine.flutterTts;
-    final defSpeed    = controller.speed  == AnalyzeController.defaultSpeed;
-    final defPitch    = controller.pitch  == AnalyzeController.defaultPitch;
-    final allDefault  = defSpeed && (!showPitch || defPitch);
+    final tts       = PiperTtsService();
+    final showPitch = tts.engine == TtsEngine.flutterTts;
+    final defSpeed  = controller.speed == AnalyzeController.defaultSpeed;
+    final defPitch  = controller.pitch == AnalyzeController.defaultPitch;
+    final allDefault = defSpeed && (!showPitch || defPitch);
 
     return SafeArea(
       top: false,
@@ -672,13 +674,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-
-            // ── Controls row ──────────────────────────────────
             Row(
               crossAxisAlignment: CrossAxisAlignment.center,
               children: [
-
-                // Text settings
                 _BarBtn(
                   icon: Icons.text_fields,
                   label: 'Text',
@@ -686,10 +684,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   filled: true,
                   onTap: _openTextSettings,
                 ),
-
                 _BarDivider(),
-
-                // Stop
                 _BarBtn(
                   icon: Icons.stop_rounded,
                   label: 'Stop',
@@ -699,8 +694,6 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                     if (mounted) setState(() {});
                   }),
                 ),
-
-                // Play / Pause  — takes remaining width
                 Expanded(
                   child: Padding(
                     padding: const EdgeInsets.symmetric(horizontal: 6),
@@ -715,23 +708,19 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       label: Text(
                         controller.isPlaying ? 'Pause' : 'Play',
                         style: const TextStyle(
-                            fontSize: 18,
-                            fontWeight: FontWeight.w700),
+                            fontSize: 18, fontWeight: FontWeight.w700),
                         overflow: TextOverflow.ellipsis,
                       ),
                       style: ElevatedButton.styleFrom(
                         backgroundColor: const Color(0xFF38616A),
                         foregroundColor: Colors.white,
-                        padding:
-                            const EdgeInsets.symmetric(vertical: 14),
+                        padding: const EdgeInsets.symmetric(vertical: 14),
                         shape: RoundedRectangleBorder(
                             borderRadius: BorderRadius.circular(14)),
                       ),
                     ),
                   ),
                 ),
-
-                // Focus mode
                 _BarBtn(
                   icon: _focusMode
                       ? Icons.center_focus_strong
@@ -741,13 +730,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                       ? const Color(0xFF1D9E75)
                       : Colors.grey,
                   filled: false,
-                  onTap: () =>
-                      setState(() => _focusMode = !_focusMode),
+                  onTap: () => setState(() => _focusMode = !_focusMode),
                 ),
-
                 _BarDivider(),
-
-                // Voice
                 _BarBtn(
                   icon: Icons.record_voice_over,
                   label: 'Voice',
@@ -757,10 +742,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 ),
               ],
             ),
-
             const SizedBox(height: 6),
-
-            // ── Speed slider ──────────────────────────────────
             _SliderRow(
               icon: Icons.speed,
               label: 'Speed',
@@ -769,16 +751,13 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
               max: AnalyzeController.maxSpeed,
               defaultValue: AnalyzeController.defaultSpeed,
               divisions: 6,
-              displayText:
-                  '${controller.speed.toStringAsFixed(1)}x',
+              displayText: '${controller.speed.toStringAsFixed(1)}x',
               isDefault: defSpeed,
               onChanged: (v) async {
                 await controller.setSpeed(v);
                 setState(() {});
               },
             ),
-
-            // ── Pitch slider (flutter_tts only) ───────────────
             if (showPitch)
               _SliderRow(
                 icon: Icons.graphic_eq,
@@ -788,16 +767,13 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 max: AnalyzeController.maxPitch,
                 defaultValue: AnalyzeController.defaultPitch,
                 divisions: 10,
-                displayText:
-                    controller.pitch.toStringAsFixed(1),
+                displayText: controller.pitch.toStringAsFixed(1),
                 isDefault: defPitch,
                 onChanged: (v) async {
                   await controller.setPitch(v);
                   setState(() {});
                 },
               ),
-
-            // ── Reset ─────────────────────────────────────────
             AnimatedSize(
               duration: const Duration(milliseconds: 200),
               child: allDefault
@@ -808,18 +784,389 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                           size: 16, color: Color(0xFF38616A)),
                       label: const Text('Reset to default',
                           style: TextStyle(
-                              fontSize: 13,
-                              color: Color(0xFF38616A))),
+                              fontSize: 13, color: Color(0xFF38616A))),
                       style: TextButton.styleFrom(
                         padding: const EdgeInsets.symmetric(
                             horizontal: 10, vertical: 4),
-                        tapTargetSize:
-                            MaterialTapTargetSize.shrinkWrap,
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
                       ),
                     ),
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+// ═══════════════════════════════════════════════════════════════
+// VOICE COMMAND FAB
+// ═══════════════════════════════════════════════════════════════
+class _VoiceCommandFab extends StatefulWidget {
+  final bool isPlaying;
+  final VoidCallback onPlay;
+  final VoidCallback onPause;
+  final VoidCallback onStop;
+  final List<VoiceModel> voices;
+  final String activeVoiceId;
+  final ValueChanged<VoiceModel> onSelectVoice;
+  final VoidCallback onRefresh;
+  final VoidCallback onOpenVoiceSelector;
+
+  const _VoiceCommandFab({
+    required this.isPlaying,
+    required this.onPlay,
+    required this.onPause,
+    required this.onStop,
+    required this.voices,
+    required this.activeVoiceId,
+    required this.onSelectVoice,
+    required this.onRefresh,
+    required this.onOpenVoiceSelector,
+  });
+
+  @override
+  State<_VoiceCommandFab> createState() => _VoiceCommandFabState();
+}
+
+class _VoiceCommandFabState extends State<_VoiceCommandFab> {
+  bool   _isListening       = false;
+  String _spokenText        = '';
+  bool   _awaitingVoicePick = false;
+  String _bubbleText        = '';
+
+  bool _wasPlayingBeforeMenu = false;
+
+  @override
+  void initState() {
+    super.initState();
+
+    SpeechRecognitionService.instance.textStream.listen((text) {
+      if (!mounted) return;
+      setState(() => _spokenText = text);
+    });
+
+    SpeechRecognitionService.instance.commandStream.listen((text) {
+      if (!mounted) return;
+      final upper = text.toUpperCase().trim();
+      if (_awaitingVoicePick) {
+        _handleVoicePickResponse(upper);
+      } else {
+        _handleVoiceCommand(upper);
+      }
+    });
+
+    SpeechRecognitionService.instance.stateStream.listen((rec) {
+      if (!mounted) return;
+      setState(() => _isListening = rec);
+    });
+  }
+
+  void _handleVoiceCommand(String upper) {
+    if (upper.contains('STOP')) {
+      widget.onStop();
+      widget.onRefresh();
+      _showBubble('Stopped.');
+
+    } else if (upper.contains('PAUSE')) {
+      if (widget.isPlaying) {
+        widget.onPause();
+        widget.onRefresh();
+        _showBubble('Paused.');
+      }
+
+    } else if (upper.contains('PLAY') ||
+               upper.contains('RESUME') ||
+               upper.contains('READ')) {
+      if (!widget.isPlaying) {
+        widget.onPlay();
+        widget.onRefresh();
+        _showBubble('Playing.');
+      }
+
+    } else if (upper.contains('VOICE') ||
+               upper.contains('SWITCH') ||
+               upper.contains('CHANGE')) {
+      _startVoiceMenu();
+    }
+  }
+
+  Future<void> _startVoiceMenu() async {
+    final tts    = PiperTtsService();
+    final voices = widget.voices;
+    if (voices.isEmpty) return;
+
+    _wasPlayingBeforeMenu = widget.isPlaying;
+    if (_wasPlayingBeforeMenu) {
+      widget.onPause();
+      widget.onRefresh();
+    }
+
+    final parts = <String>[];
+    for (int i = 0; i < voices.length; i++) {
+      parts.add('Say ${i + 1} for ${voices[i].label}');
+    }
+    final menuSpeech =
+        'Which voice would you like? ${parts.join(', ')}.';
+
+    final bubbleParts = <String>[];
+    for (int i = 0; i < voices.length; i++) {
+      final active = voices[i].id == widget.activeVoiceId ? ' ✓' : '';
+      bubbleParts.add('${i + 1}: ${voices[i].label}$active');
+    }
+
+    setState(() {
+      _awaitingVoicePick = true;
+      _bubbleText = 'Which voice?\n${bubbleParts.join('  •  ')}';
+    });
+
+    await tts.stop();
+    await tts.speak(menuSpeech);
+
+    if (mounted) {
+      setState(() => _spokenText = '');
+      SpeechRecognitionService.instance.startRecording();
+    }
+  }
+
+  Future<void> _handleVoicePickResponse(String upper) async {
+    final tts    = PiperTtsService();
+    final voices = widget.voices;
+
+    if (upper.contains('CANCEL') ||
+        upper.contains('NEVERMIND') ||
+        upper.contains('NEVER MIND') ||
+        upper.contains('BACK')) {
+      setState(() {
+        _awaitingVoicePick = false;
+        _bubbleText        = 'Cancelled.';
+      });
+      await tts.speak('Voice selection cancelled.');
+
+      if (_wasPlayingBeforeMenu) {
+        _wasPlayingBeforeMenu = false;
+        widget.onPlay();
+        widget.onRefresh();
+      }
+
+      _clearBubbleAfter(2);
+      return;
+    }
+
+    final idx = _resolveVoiceIndex(upper, voices.length);
+
+    if (idx == null) {
+      final retry =
+          'Sorry, I didn\'t catch that. '
+          'Say a number between 1 and ${voices.length}, or say cancel.';
+
+      setState(() => _bubbleText = retry);
+      await tts.speak(retry);
+
+      if (mounted) {
+        setState(() => _spokenText = '');
+        SpeechRecognitionService.instance.startRecording();
+      }
+      return;
+    }
+
+    final chosen = voices[idx];
+    setState(() {
+      _awaitingVoicePick    = false;
+      _wasPlayingBeforeMenu = false;
+      _bubbleText           = 'Switching to ${chosen.label}…';
+    });
+
+    await tts.speak('Switching to ${chosen.label}.');
+
+    widget.onSelectVoice(chosen);
+    widget.onRefresh();
+
+    Future.delayed(const Duration(milliseconds: 900), () async {
+      await tts.speak('Hello! I am ${chosen.label}. Voice switched successfully.');
+      if (mounted) {
+        setState(() => _bubbleText = '✓ ${chosen.label} active');
+        _clearBubbleAfter(3);
+        widget.onRefresh();
+      }
+    });
+  }
+
+  int? _resolveVoiceIndex(String upper, int count) {
+    const words = [
+      'ONE', 'TWO', 'THREE', 'FOUR', 'FIVE',
+      'SIX', 'SEVEN', 'EIGHT', 'NINE', 'TEN',
+    ];
+    for (int i = 0; i < words.length && i < count; i++) {
+      if (upper.contains(words[i])) return i;
+    }
+
+    const ordinals = [
+      'FIRST', 'SECOND', 'THIRD', 'FOURTH', 'FIFTH',
+      'SIXTH', 'SEVENTH', 'EIGHTH', 'NINTH', 'TENTH',
+    ];
+    for (int i = 0; i < ordinals.length && i < count; i++) {
+      if (upper.contains(ordinals[i])) return i;
+    }
+
+    for (int i = 1; i <= count; i++) {
+      if (upper.contains('$i')) return i - 1;
+    }
+
+    return null;
+  }
+
+  void _showBubble(String text) {
+    setState(() => _bubbleText = text);
+    _clearBubbleAfter(2);
+  }
+
+  void _clearBubbleAfter(int seconds) {
+    Future.delayed(Duration(seconds: seconds), () {
+      if (mounted) setState(() => _bubbleText = '');
+    });
+  }
+
+  void _startMic() {
+    setState(() => _spokenText = '');
+    SpeechRecognitionService.instance.startRecording();
+  }
+
+  void _stopMic() {
+    SpeechRecognitionService.instance.stopRecording();
+  }
+
+  // ── Build ─────────────────────────────────────────────────────
+  @override
+  Widget build(BuildContext context) {
+    final bubbleVisible = _bubbleText.isNotEmpty || _isListening;
+    final bubbleContent = _isListening
+        ? (_spokenText.isEmpty ? 'Listening…' : _spokenText)
+        : _bubbleText;
+
+    // Fixed-width column so the FAB never shifts position
+    return SizedBox(
+      width: 240,
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.start, // bubble left-aligned
+        children: [
+          // ── Speech bubble (left-aligned, stable height slot) ──
+          AnimatedSwitcher(
+            duration: const Duration(milliseconds: 220),
+            transitionBuilder: (child, anim) => FadeTransition(
+              opacity: anim,
+              child: SizeTransition(
+                sizeFactor: anim,
+                axisAlignment: 1,
+                child: child,
+              ),
+            ),
+            child: bubbleVisible
+                ? Container(
+                    key: const ValueKey('bubble'),
+                    margin: const EdgeInsets.only(bottom: 8),
+                    padding: const EdgeInsets.symmetric(
+                        horizontal: 14, vertical: 10),
+                    // No maxWidth constraint — parent SizedBox controls width
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(20),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withOpacity(0.12),
+                          blurRadius: 10,
+                          offset: const Offset(0, 3),
+                        ),
+                      ],
+                      border: Border.all(
+                        color: _awaitingVoicePick
+                            ? const Color(0xFF1D9E75).withOpacity(0.4)
+                            : Colors.transparent,
+                        width: 1.5,
+                      ),
+                    ),
+                    child: Text(
+                      bubbleContent,
+                      textAlign: TextAlign.left, // ← left-aligned text
+                      style: TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                        color: _isListening
+                            ? const Color(0xFF1D9E75)
+                            : const Color(0xFF38616A),
+                        decoration: TextDecoration.none,
+                        height: 1.5,
+                      ),
+                    ),
+                  )
+                : const SizedBox.shrink(key: ValueKey('empty')),
+          ),
+
+          // ── Mic FAB — fixed 64×64, never shifts ──────────────
+          SizedBox(
+            width: 64,
+            height: 64,
+            child: GestureDetector(
+              onLongPressStart: (_) => _startMic(),
+              onLongPressEnd:   (_) => _stopMic(),
+              onLongPressCancel: _stopMic,
+              child: AnimatedContainer(
+                duration: const Duration(milliseconds: 200),
+                decoration: BoxDecoration(
+                  shape: BoxShape.circle,
+                  color: _isListening
+                      ? Colors.redAccent
+                      : _awaitingVoicePick
+                          ? const Color(0xFF1D9E75)
+                          : const Color(0xFF38616A),
+                  boxShadow: [
+                    BoxShadow(
+                      color: (_isListening
+                              ? Colors.redAccent
+                              : _awaitingVoicePick
+                                  ? const Color(0xFF1D9E75)
+                                  : const Color(0xFF38616A))
+                          .withOpacity(0.40),
+                      blurRadius: _isListening ? 22 : 10,
+                      spreadRadius: _isListening ? 5 : 0,
+                    ),
+                  ],
+                ),
+                child: Icon(
+                  _isListening
+                      ? Icons.mic
+                      : _awaitingVoicePick
+                          ? Icons.record_voice_over
+                          : Icons.mic_none,
+                  color: Colors.white,
+                  size: 30,
+                ),
+              ),
+            ),
+          ),
+
+          // ── Label — fixed height so layout never jumps ────────
+          const SizedBox(height: 4),
+          SizedBox(
+            height: 14,
+            child: AnimatedSwitcher(
+              duration: const Duration(milliseconds: 200),
+              child: Text(
+                _awaitingVoicePick ? 'Say a number' : 'Hold to talk',
+                key: ValueKey(_awaitingVoicePick),
+                style: TextStyle(
+                  fontSize: 10,
+                  fontWeight: FontWeight.w600,
+                  color: _awaitingVoicePick
+                      ? const Color(0xFF1D9E75)
+                      : Colors.grey.shade500,
+                  decoration: TextDecoration.none,
+                ),
+              ),
+            ),
+          ),
+        ],
       ),
     );
   }
@@ -839,7 +1186,6 @@ class _ReselectFab extends StatelessWidget {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Circular Button
           Material(
             color: const Color(0xFF38616A),
             shape: const CircleBorder(),
@@ -849,7 +1195,6 @@ class _ReselectFab extends StatelessWidget {
               child: Icon(Icons.crop_free, color: Colors.white, size: 28),
             ),
           ),
-
           const SizedBox(height: 4),
           Container(
             padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
@@ -864,7 +1209,7 @@ class _ReselectFab extends StatelessWidget {
                 fontWeight: FontWeight.w700,
                 color: Color(0xFF38616A),
                 letterSpacing: 0.3,
-                decoration: TextDecoration.none,     // ← This removes the yellow line
+                decoration: TextDecoration.none,
                 decorationColor: Colors.transparent,
               ),
             ),
@@ -877,13 +1222,13 @@ class _ReselectFab extends StatelessWidget {
 }
 
 // ═══════════════════════════════════════════════════════════════
-// BAR BUTTON  (icon + label, fixed circle)
+// BAR BUTTON
 // ═══════════════════════════════════════════════════════════════
 class _BarBtn extends StatelessWidget {
-  final IconData  icon;
-  final String    label;
-  final Color     color;
-  final bool      filled;
+  final IconData     icon;
+  final String       label;
+  final Color        color;
+  final bool         filled;
   final VoidCallback onTap;
 
   const _BarBtn({
@@ -914,8 +1259,8 @@ class _BarBtn extends StatelessWidget {
                     ? null
                     : Border.all(color: color, width: 2),
               ),
-              child:
-                  Icon(icon, size: 24, color: filled ? Colors.white : color),
+              child: Icon(icon,
+                  size: 24, color: filled ? Colors.white : color),
             ),
             const SizedBox(height: 4),
             Text(label,
@@ -953,10 +1298,9 @@ class _BarDivider extends StatelessWidget {
 // ENGINE TOGGLE
 // ═══════════════════════════════════════════════════════════════
 class _EngineToggle extends StatelessWidget {
-  final TtsEngine selected;
+  final TtsEngine               selected;
   final ValueChanged<TtsEngine> onChanged;
-  const _EngineToggle(
-      {required this.selected, required this.onChanged});
+  const _EngineToggle({required this.selected, required this.onChanged});
 
   @override
   Widget build(BuildContext context) {
@@ -975,8 +1319,7 @@ class _EngineToggle extends StatelessWidget {
             active: selected == TtsEngine.piper,
             onTap: () => onChanged(TtsEngine.piper),
           ),
-          Container(
-              width: 1, height: 56, color: Colors.grey.shade200),
+          Container(width: 1, height: 56, color: Colors.grey.shade200),
           _EngineBtn(
             label: 'Device TTS',
             sublabel: 'System voices',
@@ -991,10 +1334,10 @@ class _EngineToggle extends StatelessWidget {
 }
 
 class _EngineBtn extends StatelessWidget {
-  final String     label;
-  final String     sublabel;
-  final IconData   icon;
-  final bool       active;
+  final String       label;
+  final String       sublabel;
+  final IconData     icon;
+  final bool         active;
   final VoidCallback onTap;
   const _EngineBtn({
     required this.label,
@@ -1012,12 +1355,9 @@ class _EngineBtn extends StatelessWidget {
         onTap: onTap,
         child: AnimatedContainer(
           duration: const Duration(milliseconds: 180),
-          padding: const EdgeInsets.symmetric(
-              vertical: 12, horizontal: 14),
+          padding: const EdgeInsets.symmetric(vertical: 12, horizontal: 14),
           decoration: BoxDecoration(
-            color: active
-                ? accent.withOpacity(0.10)
-                : Colors.transparent,
+            color: active ? accent.withOpacity(0.10) : Colors.transparent,
             borderRadius: BorderRadius.circular(13),
           ),
           child: Row(
@@ -1045,8 +1385,7 @@ class _EngineBtn extends StatelessWidget {
                 ),
               ),
               if (active)
-                const Icon(Icons.check_circle,
-                    color: accent, size: 18),
+                const Icon(Icons.check_circle, color: accent, size: 18),
             ],
           ),
         ),
@@ -1059,8 +1398,8 @@ class _EngineBtn extends StatelessWidget {
 // PIPER VOICE TILE
 // ═══════════════════════════════════════════════════════════════
 class _PiperVoiceTile extends StatelessWidget {
-  final VoiceModel voice;
-  final bool isActive;
+  final VoiceModel   voice;
+  final bool         isActive;
   final VoidCallback onTap;
   const _PiperVoiceTile(
       {required this.voice, required this.isActive, required this.onTap});
@@ -1073,11 +1412,9 @@ class _PiperVoiceTile extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 180),
         margin: const EdgeInsets.only(bottom: 12),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
+        padding: const EdgeInsets.symmetric(horizontal: 18, vertical: 14),
         decoration: BoxDecoration(
-          color:
-              isActive ? accent.withOpacity(0.08) : Colors.grey.shade50,
+          color: isActive ? accent.withOpacity(0.08) : Colors.grey.shade50,
           borderRadius: BorderRadius.circular(14),
           border: Border.all(
               color: isActive ? accent : Colors.grey.shade200,
@@ -1094,9 +1431,7 @@ class _PiperVoiceTile extends StatelessWidget {
               ),
               child: Icon(Icons.record_voice_over,
                   size: 24,
-                  color: isActive
-                      ? Colors.white
-                      : Colors.grey.shade500),
+                  color: isActive ? Colors.white : Colors.grey.shade500),
             ),
             const SizedBox(width: 14),
             Expanded(
@@ -1107,8 +1442,7 @@ class _PiperVoiceTile extends StatelessWidget {
                       style: TextStyle(
                           fontSize: 16,
                           fontWeight: FontWeight.w700,
-                          color:
-                              isActive ? accent : Colors.black87)),
+                          color: isActive ? accent : Colors.black87)),
                   const SizedBox(height: 2),
                   Text(voice.accent,
                       style: const TextStyle(
@@ -1130,8 +1464,8 @@ class _PiperVoiceTile extends StatelessWidget {
 // ═══════════════════════════════════════════════════════════════
 class _FlutterTtsVoiceTile extends StatelessWidget {
   final FlutterTtsVoice voice;
-  final bool isActive;
-  final VoidCallback onTap;
+  final bool            isActive;
+  final VoidCallback    onTap;
   const _FlutterTtsVoiceTile(
       {required this.voice, required this.isActive, required this.onTap});
 
@@ -1143,8 +1477,7 @@ class _FlutterTtsVoiceTile extends StatelessWidget {
       child: AnimatedContainer(
         duration: const Duration(milliseconds: 160),
         margin: const EdgeInsets.only(bottom: 10),
-        padding:
-            const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
+        padding: const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
         decoration: BoxDecoration(
           color: isActive ? accent.withOpacity(0.08) : Colors.white,
           borderRadius: BorderRadius.circular(12),
@@ -1176,8 +1509,7 @@ class _FlutterTtsVoiceTile extends StatelessWidget {
                       style: TextStyle(
                           fontSize: 15,
                           fontWeight: FontWeight.w600,
-                          color:
-                              isActive ? accent : Colors.black87),
+                          color: isActive ? accent : Colors.black87),
                       overflow: TextOverflow.ellipsis),
                   Text(voice.locale,
                       style: const TextStyle(
@@ -1205,11 +1537,10 @@ class _VoiceSwitchingOverlay extends StatefulWidget {
       _VoiceSwitchingOverlayState();
 }
 
-class _VoiceSwitchingOverlayState
-    extends State<_VoiceSwitchingOverlay>
+class _VoiceSwitchingOverlayState extends State<_VoiceSwitchingOverlay>
     with SingleTickerProviderStateMixin {
   late final AnimationController _pulse;
-  late final Animation<double> _scale;
+  late final Animation<double>   _scale;
 
   @override
   void initState() {
@@ -1236,8 +1567,7 @@ class _VoiceSwitchingOverlayState
       child: Center(
         child: Container(
           margin: const EdgeInsets.symmetric(horizontal: 40),
-          padding: const EdgeInsets.symmetric(
-              horizontal: 32, vertical: 32),
+          padding: const EdgeInsets.symmetric(horizontal: 32, vertical: 32),
           decoration: BoxDecoration(
             color: Colors.white,
             borderRadius: BorderRadius.circular(24),
@@ -1258,8 +1588,7 @@ class _VoiceSwitchingOverlayState
                   width: 80,
                   height: 80,
                   decoration: BoxDecoration(
-                    color:
-                        const Color(0xFF38616A).withOpacity(0.10),
+                    color: const Color(0xFF38616A).withOpacity(0.10),
                     shape: BoxShape.circle,
                   ),
                   child: const Icon(Icons.record_voice_over,
@@ -1277,8 +1606,10 @@ class _VoiceSwitchingOverlayState
               const Text('Loading voice model, please wait',
                   textAlign: TextAlign.center,
                   style: TextStyle(
-                    decoration: TextDecoration.none,
-                      fontSize: 14, color: Colors.grey, height: 1.4)),
+                      decoration: TextDecoration.none,
+                      fontSize: 14,
+                      color: Colors.grey,
+                      height: 1.4)),
               const SizedBox(height: 24),
               ClipRRect(
                 borderRadius: BorderRadius.circular(4),
@@ -1304,8 +1635,8 @@ class _VoiceSwitchingOverlayState
 // ═══════════════════════════════════════════════════════════════
 class _ReadProgressBanner extends StatelessWidget {
   final List<String> sentences;
-  final int currentIndex;
-  final bool isPlaying;
+  final int          currentIndex;
+  final bool         isPlaying;
   final VoidCallback onStop;
 
   const _ReadProgressBanner({
@@ -1318,10 +1649,10 @@ class _ReadProgressBanner extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final total     = sentences.length;
-    final safeIdx   = currentIndex.clamp(0, total - 1);
-    final progress  = total > 1 ? (safeIdx / (total - 1)) : 1.0;
-    final current   = sentences[safeIdx];
+    final total    = sentences.length;
+    final safeIdx  = currentIndex.clamp(0, total - 1);
+    final progress = total > 1 ? (safeIdx / (total - 1)) : 1.0;
+    final current  = sentences[safeIdx];
 
     const accent     = Color(0xFF1D9E75);
     const accentDark = Color(0xFF0F6E56);
@@ -1338,8 +1669,8 @@ class _ReadProgressBanner extends StatelessWidget {
           ],
         ),
         border: Border(
-            bottom:
-                BorderSide(color: accent.withOpacity(0.22), width: 1)),
+            bottom: BorderSide(
+                color: accent.withOpacity(0.22), width: 1)),
       ),
       child: Column(
         mainAxisSize: MainAxisSize.min,
@@ -1413,11 +1744,13 @@ class _ReadProgressBanner extends StatelessWidget {
 }
 
 class _PartPill extends StatelessWidget {
-  final int current;
-  final int total;
+  final int  current;
+  final int  total;
   final bool isPlaying;
   const _PartPill(
-      {required this.current, required this.total, required this.isPlaying});
+      {required this.current,
+      required this.total,
+      required this.isPlaying});
 
   @override
   Widget build(BuildContext context) {
@@ -1446,9 +1779,8 @@ class _PartPill extends StatelessWidget {
 
 class _ProgressBar extends StatelessWidget {
   final double progress;
-  final bool isPlaying;
-  const _ProgressBar(
-      {required this.progress, required this.isPlaying});
+  final bool   isPlaying;
+  const _ProgressBar({required this.progress, required this.isPlaying});
 
   @override
   Widget build(BuildContext context) {
@@ -1489,11 +1821,11 @@ class _WaveformIcon extends StatefulWidget {
 class _WaveformIconState extends State<_WaveformIcon>
     with TickerProviderStateMixin {
   late final List<AnimationController> _bars;
-  late final List<Animation<double>> _heights;
+  late final List<Animation<double>>   _heights;
 
   static const _delays = [0.0, 0.2, 0.4];
   static const _mins   = [0.35, 0.55, 0.25];
-  static const _maxs   = [1.0, 0.75, 0.9];
+  static const _maxs   = [1.0,  0.75, 0.9];
 
   @override
   void initState() {
@@ -1575,7 +1907,6 @@ class _WaveformIconState extends State<_WaveformIcon>
 // ═══════════════════════════════════════════════════════════════
 // SHEET SHARED WIDGETS
 // ═══════════════════════════════════════════════════════════════
-
 Widget _sheetHandle() => Center(
       child: Container(
         width: 40,
@@ -1618,18 +1949,17 @@ class _SheetSliderRow extends StatelessWidget {
   }
 }
 
-
 class _SliderRow extends StatelessWidget {
-  final IconData icon;
-  final String label;
-  final double value;
-  final double min;
-  final double max;
-  final double defaultValue;
-  final int divisions;
-  final String displayText;
-  final bool isDefault;
-  final ValueChanged<double> onChanged;
+  final IconData             icon;
+  final String               label;
+  final double               value;
+  final double               min;
+  final double               max;
+  final double               defaultValue;
+  final int                  divisions;
+  final String               displayText;
+  final bool                 isDefault;
+  final ValueChanged<double>  onChanged;
 
   const _SliderRow({
     required this.icon,
@@ -1657,11 +1987,13 @@ class _SliderRow extends StatelessWidget {
             mainAxisSize: MainAxisSize.min,
             children: [
               Text(label,
-                  style: const TextStyle(fontSize: 12, color: Colors.grey)),
+                  style: const TextStyle(
+                      fontSize: 12, color: Colors.grey)),
               if (isDefault)
                 Container(
                   margin: const EdgeInsets.only(top: 1),
-                  padding: const EdgeInsets.symmetric(horizontal: 4, vertical: 1),
+                  padding: const EdgeInsets.symmetric(
+                      horizontal: 4, vertical: 1),
                   decoration: BoxDecoration(
                     color: const Color(0xFF38616A).withOpacity(0.12),
                     borderRadius: BorderRadius.circular(3),
@@ -1682,7 +2014,6 @@ class _SliderRow extends StatelessWidget {
               SliderTheme(
                 data: SliderTheme.of(context).copyWith(
                   showValueIndicator: ShowValueIndicator.always,
-                  // FIXED: Replaced invalid 'thumbRadius' with correct 'thumbShape'
                   thumbShape: const RoundSliderThumbShape(
                     enabledThumbRadius: 10.0,
                     pressedElevation: 8.0,
@@ -1744,7 +2075,7 @@ class _DefaultMarkerPainter extends CustomPainter {
   final double min;
   final double max;
   final double defaultValue;
-  final bool isAtDefault;
+  final bool   isAtDefault;
 
   const _DefaultMarkerPainter({
     required this.min,
@@ -1755,10 +2086,11 @@ class _DefaultMarkerPainter extends CustomPainter {
 
   @override
   void paint(Canvas canvas, Size size) {
-    const double pad = 24.0;
+    const double pad    = 24.0;
     final double trackW = size.width - pad * 2;
-    final double fraction = (defaultValue - min) / (max - min);
-    final double x = pad + fraction * trackW;
+    final double fraction =
+        (defaultValue - min) / (max - min);
+    final double x  = pad + fraction * trackW;
     final double cy = size.height / 2;
 
     final paint = Paint()
@@ -1789,5 +2121,5 @@ class _DefaultMarkerPainter extends CustomPainter {
   @override
   bool shouldRepaint(_DefaultMarkerPainter old) =>
       old.defaultValue != defaultValue ||
-      old.isAtDefault != isAtDefault;
+      old.isAtDefault  != isAtDefault;
 }

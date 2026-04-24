@@ -1,12 +1,15 @@
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
-import 'package:sherpa_onnx/sherpa_onnx.dart' as sherpa;
 import 'core/history/history_store.dart';
 import 'screens/splash_screen.dart';
 
+// ✅ DO NOT call sherpa.initBindings() here.
+// It is called exactly once inside SpeechRecognitionService.initialize().
+// Calling it multiple times corrupts the ONNX Runtime's internal thread pool
+// mutex → pthread_mutex_lock on destroyed mutex → SIGABRT crash.
+
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
-  sherpa.initBindings();
   await HistoryStore.init();
 
   SystemChrome.setEnabledSystemUIMode(SystemUiMode.immersiveSticky);
@@ -25,5 +28,3 @@ class MyApp extends StatelessWidget {
     );
   }
 }
-
-// hello worlds

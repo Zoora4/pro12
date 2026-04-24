@@ -44,7 +44,9 @@ dependencies:
   sherpa_onnx: ^1.10.30
   just_audio: ^0.9.40
   path_provider: ^2.1.2
-  
+  record: ^5.1.2
+  synchronized: ^3.1.0
+  permission_handler: ^11.3.1
   
 
 
@@ -87,6 +89,7 @@ flutter:
     - assets/models/en_GB-alan-medium.onnx.json
     - assets/models/en_US-amy-medium.onnx
     - assets/models/en_US-amy-medium.onnx.json
+    - assets/models/stt/
 
 flutter_launcher_icons:
   android: true
@@ -119,3 +122,6 @@ flutter_launcher_icons:
   #
   # For details regarding fonts from package dependencies,
   # see https://flutter.dev/to/font-from-package
+dependency_overrides:
+  record_platform_interface: 1.1.0
+  record_linux: 0.7.1

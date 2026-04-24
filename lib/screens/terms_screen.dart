@@ -1,7 +1,11 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../../services/piper_tts_service.dart';
+import '../../services/speech_recognition_service.dart';
+import '../../services/voice_command_service.dart';
 import 'main_nav_screen.dart';
 
 // ── Prefs helpers ─────────────────────────────────────────────
@@ -64,13 +68,19 @@ const _terms = [
   },
 ];
 
+// ── One sentence per section for startLoop() ─────────────────
+// We feed each section as its own "sentence" so onSentenceChanged
+// fires at the exact moment Piper starts playing that section — 
+// no guessing, perfect sync.
+List<String> get _termsSentences => [
+  for (final t in _terms) '${t['title']}. ${t['body']}',
+];
+
 // ─────────────────────────────────────────────────────────────
 // Terms Screen
 // ─────────────────────────────────────────────────────────────
 class TermsScreen extends StatefulWidget {
-  /// Whether to start the onboarding tour after acceptance.
   final bool startOnboarding;
-
   const TermsScreen({super.key, this.startOnboarding = false});
 
   @override
@@ -79,18 +89,172 @@ class TermsScreen extends StatefulWidget {
 
 class _TermsScreenState extends State<TermsScreen> {
   final ScrollController _scrollCtrl = ScrollController();
+
+  // One GlobalKey per section so we can scroll to it
+  final List<GlobalKey> _sectionKeys =
+      List.generate(_terms.length, (_) => GlobalKey());
+
   bool _hasScrolledToBottom = false;
-  bool _checkboxChecked = false;
+  bool _checkboxChecked     = false;
+
+  // ── TTS ───────────────────────────────────────────────────
+  final _tts            = PiperTtsService();
+  bool  _ttsPlaying     = false;
+  bool  _ttsReady       = false;
+  int   _highlightIndex = -1; // -1 = none highlighted
+  // highlight driven by startLoop onSentenceChanged — no Timer needed
+
+  // ── Voice command ─────────────────────────────────────────
+  bool   _micListening = false;
+  String _micDisplay   = '';
+  StreamSubscription<String>? _cmdSub;
+  StreamSubscription<String>? _textSub;
+  StreamSubscription<bool>?   _stateSub;
 
   static const Color _accent = Color(0xFF38616A);
-  static const Color _bg = Color(0xFFE8EDEF);
+  static const Color _bg     = Color(0xFFE8EDEF);
 
   @override
   void initState() {
     super.initState();
     _scrollCtrl.addListener(_onScroll);
+    _initTts();
+    _initVoice();
   }
 
+  // ── TTS init ──────────────────────────────────────────────
+  Future<void> _initTts() async {
+    if (mounted) setState(() => _ttsReady = true);
+  }
+
+  void _scrollToBottom() {
+    if (!_scrollCtrl.hasClients) return;
+    _scrollCtrl.animateTo(
+      _scrollCtrl.position.maxScrollExtent,
+      duration: const Duration(milliseconds: 600),
+      curve: Curves.easeOut,
+    );
+  }
+
+  // ── Scroll a section into view ────────────────────────────
+  void _scrollToSection(int index) {
+    if (index < 0 || index >= _sectionKeys.length) return;
+    final ctx = _sectionKeys[index].currentContext;
+    if (ctx == null) return;
+    Scrollable.ensureVisible(
+      ctx,
+      duration: const Duration(milliseconds: 500),
+      curve: Curves.easeOut,
+      alignment: 0.1, // slight top padding
+    );
+  }
+
+  // ── TTS toggle — uses startLoop for perfect sync ──────────
+  // Each section is its own "sentence". onSentenceChanged fires the
+  // instant Piper starts playing that section — zero timer guessing.
+  Future<void> _toggleTts() async {
+    if (_ttsPlaying) {
+      await _tts.stop(); // stopLoop() fires onFinished(false) internally
+    } else {
+      if (mounted) setState(() => _ttsPlaying = true);
+      await _tts.init(); // ensure service is ready
+      _tts.startLoop(
+        sentences: _termsSentences,
+        startIndex: 0,
+        speedGetter: () => 1.0,
+        onSentenceChanged: (i) {
+          if (!mounted) return;
+          setState(() => _highlightIndex = i);
+          _scrollToSection(i);
+        },
+        onFinished: (completed) {
+          if (!mounted) return;
+          setState(() {
+            _ttsPlaying = false;
+            _highlightIndex = -1;
+          });
+          if (completed && !_hasScrolledToBottom) _scrollToBottom();
+        },
+      );
+    }
+  }
+
+  // ── Voice command init ────────────────────────────────────
+  Future<void> _initVoice() async {
+    await SpeechRecognitionService.instance.initialize();
+
+    VoiceCommandService.instance.registerCommand('ACCEPT',      _voiceAccept);
+    VoiceCommandService.instance.registerCommand('AGREE',       _voiceAccept);
+    VoiceCommandService.instance.registerCommand('I AGREE',     _voiceAccept);
+    VoiceCommandService.instance.registerCommand('CONFIRM',     _voiceAccept);
+    VoiceCommandService.instance.registerCommand('DECLINE',     _voiceDecline);
+    VoiceCommandService.instance.registerCommand('REJECT',      _voiceDecline);
+    VoiceCommandService.instance.registerCommand('READ',        _voiceRead);
+    VoiceCommandService.instance.registerCommand('READ TERMS',  _voiceRead);
+    VoiceCommandService.instance.registerCommand('RTERMS',      _voiceRead);
+    VoiceCommandService.instance.registerCommand('PLAY',        _voiceRead);
+    VoiceCommandService.instance.registerCommand('STOP',        _voiceStop);
+    VoiceCommandService.instance.registerCommand('PAUSE',       _voiceStop);
+    VoiceCommandService.instance.registerCommand('SCROLL DOWN', _voiceScrollDown);
+    VoiceCommandService.instance.registerCommand('DOWN',        _voiceScrollDown);
+    VoiceCommandService.instance.registerCommand('SCROLL UP',   _voiceScrollUp);
+    VoiceCommandService.instance.registerCommand('UP',          _voiceScrollUp);
+
+    _textSub = SpeechRecognitionService.instance.textStream.listen((t) {
+      if (!mounted) return;
+      setState(() => _micDisplay = t);
+    });
+
+    _cmdSub = SpeechRecognitionService.instance.commandStream.listen((t) {
+      if (!mounted) return;
+      VoiceCommandService.instance.processText(t);
+    });
+
+    _stateSub = SpeechRecognitionService.instance.stateStream.listen((v) {
+      if (!mounted) return;
+      setState(() => _micListening = v);
+    });
+  }
+
+  // ── Voice actions ─────────────────────────────────────────
+  void _voiceAccept() {
+    if (!_hasScrolledToBottom) {
+      _scrollToBottom();
+      return;
+    }
+    setState(() => _checkboxChecked = true);
+    Future.delayed(const Duration(milliseconds: 300), _onAccept);
+  }
+
+  void _voiceDecline() => _onDecline();
+
+  void _voiceRead() => _toggleTts();
+
+  void _voiceStop() async {
+    await _tts.stop(); // stopLoop fires onFinished(false) → resets state via callback
+  }
+
+  void _voiceScrollDown() {
+    if (!_scrollCtrl.hasClients) return;
+    _scrollCtrl.animateTo(
+      (_scrollCtrl.offset + 400)
+          .clamp(0.0, _scrollCtrl.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+    );
+  }
+
+  void _voiceScrollUp() {
+    if (!_scrollCtrl.hasClients) return;
+    _scrollCtrl.animateTo(
+      (_scrollCtrl.offset - 400)
+          .clamp(0.0, _scrollCtrl.position.maxScrollExtent),
+      duration: const Duration(milliseconds: 400),
+      curve: Curves.easeOut,
+    );
+  }
+
+  // ── Scroll listener ───────────────────────────────────────
   void _onScroll() {
     if (_hasScrolledToBottom) return;
     final pos = _scrollCtrl.position;
@@ -103,20 +267,23 @@ class _TermsScreenState extends State<TermsScreen> {
   void dispose() {
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
+    _tts.stop();
+    _cmdSub?.cancel();
+    _textSub?.cancel();
+    _stateSub?.cancel();
+    SpeechRecognitionService.instance.stopRecording();
     super.dispose();
   }
 
   Future<void> _onAccept() async {
+    await _tts.stop();
+    await SpeechRecognitionService.instance.stopRecording();
     await markTermsAccepted();
-
     if (!mounted) return;
-
-    // ── Navigate using THIS screen's own live context ─────────
     Navigator.of(context).pushReplacement(
       PageRouteBuilder(
-        pageBuilder: (_, __, ___) => MainNavScreen(
-          startOnboarding: widget.startOnboarding,
-        ),
+        pageBuilder: (_, __, ___) =>
+            MainNavScreen(startOnboarding: widget.startOnboarding),
         transitionsBuilder: (_, anim, __, child) =>
             FadeTransition(opacity: anim, child: child),
         transitionDuration: const Duration(milliseconds: 400),
@@ -132,6 +299,7 @@ class _TermsScreenState extends State<TermsScreen> {
     );
   }
 
+  // ── Build ─────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final canAccept = _hasScrolledToBottom && _checkboxChecked;
@@ -140,6 +308,9 @@ class _TermsScreenState extends State<TermsScreen> {
       canPop: false,
       child: Scaffold(
         backgroundColor: _bg,
+        // Lift FABs higher — use endDocked or a custom bottom offset via padding
+        floatingActionButton: _buildFabs(),
+        floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         body: SafeArea(
           child: Column(
             children: [
@@ -149,20 +320,20 @@ class _TermsScreenState extends State<TermsScreen> {
                   children: [
                     ListView.separated(
                       controller: _scrollCtrl,
-                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 32),
+                      // Extra bottom padding so content clears the tall FAB column
+                      padding: const EdgeInsets.fromLTRB(20, 16, 20, 140),
                       itemCount: _terms.length,
-                      separatorBuilder: (_, __) =>
-                          const SizedBox(height: 20),
+                      separatorBuilder: (_, __) => const SizedBox(height: 20),
                       itemBuilder: (_, i) => _TermsSection(
+                        key: _sectionKeys[i],
                         title: _terms[i]['title']!,
                         body: _terms[i]['body']!,
+                        highlighted: _highlightIndex == i,
                       ),
                     ),
                     if (!_hasScrolledToBottom)
                       Positioned(
-                        left: 0,
-                        right: 0,
-                        bottom: 0,
+                        left: 0, right: 0, bottom: 0,
                         child: IgnorePointer(
                           child: Container(
                             height: 64,
@@ -208,6 +379,140 @@ class _TermsScreenState extends State<TermsScreen> {
     );
   }
 
+  // ── FABs ──────────────────────────────────────────────────
+  Widget _buildFabs() {
+    // Wrap in Padding to push the whole FAB column upward
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 200), // ← lifts FABs up
+      child: Column(
+        mainAxisSize: MainAxisSize.min,
+        crossAxisAlignment: CrossAxisAlignment.end,
+        children: [
+
+          // Live mic display bubble
+          if (_micListening && _micDisplay.isNotEmpty)
+            Container(
+              margin: const EdgeInsets.only(bottom: 6, right: 4),
+              padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 6),
+              decoration: BoxDecoration(
+                color: const Color(0xFF1A1A2E),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Text(
+                _micDisplay,
+                style: const TextStyle(
+                  color: Colors.white,
+                  fontSize: 12,
+                  fontWeight: FontWeight.w500,
+                ),
+              ),
+            ),
+
+          // ── Mic button (bigger: 64×64) ─────────────────────
+          GestureDetector(
+            onTapDown: (_) {
+              setState(() => _micDisplay = '');
+              SpeechRecognitionService.instance.startRecording();
+            },
+            onTapUp: (_) =>
+                SpeechRecognitionService.instance.stopRecording(),
+            onTapCancel: () =>
+                SpeechRecognitionService.instance.stopRecording(),
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 64,   // ← was 52
+                  height: 64,  // ← was 52
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _micListening
+                        ? Colors.redAccent
+                        : const Color(0xFF38616A),
+                    boxShadow: [
+                      BoxShadow(
+                        color: (_micListening
+                                ? Colors.redAccent
+                                : const Color(0xFF38616A))
+                            .withOpacity(0.4),
+                        blurRadius: _micListening ? 20 : 8,
+                        spreadRadius: _micListening ? 3 : 0,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    _micListening ? Icons.mic : Icons.mic_none,
+                    color: Colors.white,
+                    size: 30,  // ← was 24
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _micListening ? 'Listening' : 'Hold',
+                  style: TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: _micListening ? Colors.redAccent : _accent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+          const SizedBox(height: 14),
+
+          // ── TTS read/pause button (bigger: 64×64) ──────────
+          GestureDetector(
+            onTap: _ttsReady ? _toggleTts : null,
+            child: Column(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                AnimatedContainer(
+                  duration: const Duration(milliseconds: 180),
+                  width: 64,   // ← was 52
+                  height: 64,  // ← was 52
+                  decoration: BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _ttsPlaying
+                        ? const Color(0xFF1D9E75)
+                        : Colors.white,
+                    border: Border.all(color: _accent, width: 2),
+                    boxShadow: [
+                      BoxShadow(
+                        color: _accent.withOpacity(0.25),
+                        blurRadius: 10,
+                      ),
+                    ],
+                  ),
+                  child: Icon(
+                    _ttsPlaying
+                        ? Icons.pause_rounded
+                        : Icons.volume_up_rounded,
+                    color: _ttsPlaying ? Colors.white : _accent,
+                    size: 30,  // ← was 24
+                  ),
+                ),
+                const SizedBox(height: 4),
+                Text(
+                  _ttsPlaying ? 'Pause' : 'Read',
+                  style: const TextStyle(
+                    fontSize: 11,
+                    fontWeight: FontWeight.w700,
+                    color: _accent,
+                  ),
+                ),
+              ],
+            ),
+          ),
+
+
+        ],
+      ),
+    );
+  }
+
+  // ── Header ────────────────────────────────────────────────
   Widget _buildHeader() {
     return Container(
       width: double.infinity,
@@ -251,11 +556,36 @@ class _TermsScreenState extends State<TermsScreen> {
               height: 1.4,
             ),
           ),
+          const SizedBox(height: 10),
+          Container(
+            padding:
+                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            decoration: BoxDecoration(
+              color: Colors.white.withOpacity(0.15),
+              borderRadius: BorderRadius.circular(20),
+            ),
+            child: const Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                Icon(Icons.mic, color: Colors.white70, size: 14),
+                SizedBox(width: 6),
+                Text(
+                  'Say "Read terms"  ·  "Accept"',
+                  style: TextStyle(
+                    color: Colors.white70,
+                    fontSize: 11,
+                    fontWeight: FontWeight.w500,
+                  ),
+                ),
+              ],
+            ),
+          ),
         ],
       ),
     );
   }
 
+  // ── Footer ────────────────────────────────────────────────
   Widget _buildFooter(bool canAccept) {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
@@ -274,7 +604,7 @@ class _TermsScreenState extends State<TermsScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // ── Checkbox ─────────────────────────────────────────
+          // Checkbox
           GestureDetector(
             onTap: _hasScrolledToBottom
                 ? () => setState(
@@ -292,8 +622,7 @@ class _TermsScreenState extends State<TermsScreen> {
                     height: 22,
                     margin: const EdgeInsets.only(top: 1),
                     decoration: BoxDecoration(
-                      color:
-                          _checkboxChecked ? _accent : Colors.white,
+                      color: _checkboxChecked ? _accent : Colors.white,
                       border: Border.all(
                         color: _checkboxChecked
                             ? _accent
@@ -325,7 +654,7 @@ class _TermsScreenState extends State<TermsScreen> {
 
           const SizedBox(height: 16),
 
-          // ── Accept button ─────────────────────────────────────
+          // Accept button
           SizedBox(
             width: double.infinity,
             child: AnimatedOpacity(
@@ -354,7 +683,7 @@ class _TermsScreenState extends State<TermsScreen> {
 
           const SizedBox(height: 10),
 
-          // ── Decline button ────────────────────────────────────
+          // Decline button
           SizedBox(
             width: double.infinity,
             child: TextButton(
@@ -383,25 +712,42 @@ class _TermsScreenState extends State<TermsScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Individual terms section
+// Individual terms section — supports highlight state
 // ─────────────────────────────────────────────────────────────
 class _TermsSection extends StatelessWidget {
   final String title;
   final String body;
+  final bool highlighted;
 
-  const _TermsSection({required this.title, required this.body});
+  const _TermsSection({
+    super.key,
+    required this.title,
+    required this.body,
+    this.highlighted = false,
+  });
+
+  static const Color _accent      = Color(0xFF38616A);
+  static const Color _highlightBg = Color(0xFFE0F2F1); // soft teal tint
 
   @override
   Widget build(BuildContext context) {
-    return Container(
+    return AnimatedContainer(
+      duration: const Duration(milliseconds: 350),
+      curve: Curves.easeOut,
       padding: const EdgeInsets.all(16),
       decoration: BoxDecoration(
-        color: Colors.white,
+        color: highlighted ? _highlightBg : Colors.white,
         borderRadius: BorderRadius.circular(14),
+        border: Border.all(
+          color: highlighted ? _accent : Colors.transparent,
+          width: 2,
+        ),
         boxShadow: [
           BoxShadow(
-            color: Colors.black.withOpacity(0.04),
-            blurRadius: 6,
+            color: highlighted
+                ? _accent.withOpacity(0.18)
+                : Colors.black.withOpacity(0.04),
+            blurRadius: highlighted ? 14 : 6,
             offset: const Offset(0, 2),
           ),
         ],
@@ -409,29 +755,51 @@ class _TermsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(
-            title,
-            style: const TextStyle(
-              fontSize: 14,
-              fontWeight: FontWeight.w700,
-              color: _accent,
-            ),
+          // Reading indicator dot + title row
+          Row(
+            children: [
+              if (highlighted)
+                Container(
+                  width: 8,
+                  height: 8,
+                  margin: const EdgeInsets.only(right: 8),
+                  decoration: const BoxDecoration(
+                    shape: BoxShape.circle,
+                    color: _accent,
+                  ),
+                ),
+              Expanded(
+                child: Text(
+                  title,
+                  style: TextStyle(
+                    fontSize: 14,
+                    fontWeight: FontWeight.w700,
+                    color: highlighted ? _accent : _accent,
+                  ),
+                ),
+              ),
+              if (highlighted)
+                const Icon(Icons.volume_up_rounded,
+                    color: _accent, size: 16),
+            ],
           ),
           const SizedBox(height: 8),
           Text(
             body,
-            style: const TextStyle(
+            style: TextStyle(
               fontSize: 13,
-              color: Color(0xFF444444),
+              color: highlighted
+                  ? const Color(0xFF2C2C2C)
+                  : const Color(0xFF444444),
               height: 1.6,
+              fontWeight:
+                  highlighted ? FontWeight.w500 : FontWeight.normal,
             ),
           ),
         ],
       ),
     );
   }
-
-  static const Color _accent = Color(0xFF38616A);
 }
 
 // ─────────────────────────────────────────────────────────────
@@ -452,8 +820,7 @@ class _DeclineDialog extends StatelessWidget {
           SizedBox(width: 10),
           Text(
             'Are you sure?',
-            style:
-                TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
           ),
         ],
       ),
