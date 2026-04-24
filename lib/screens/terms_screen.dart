@@ -69,9 +69,6 @@ const _terms = [
 ];
 
 // ── One sentence per section for startLoop() ─────────────────
-// We feed each section as its own "sentence" so onSentenceChanged
-// fires at the exact moment Piper starts playing that section — 
-// no guessing, perfect sync.
 List<String> get _termsSentences => [
   for (final t in _terms) '${t['title']}. ${t['body']}',
 ];
@@ -90,7 +87,6 @@ class TermsScreen extends StatefulWidget {
 class _TermsScreenState extends State<TermsScreen> {
   final ScrollController _scrollCtrl = ScrollController();
 
-  // One GlobalKey per section so we can scroll to it
   final List<GlobalKey> _sectionKeys =
       List.generate(_terms.length, (_) => GlobalKey());
 
@@ -101,8 +97,7 @@ class _TermsScreenState extends State<TermsScreen> {
   final _tts            = PiperTtsService();
   bool  _ttsPlaying     = false;
   bool  _ttsReady       = false;
-  int   _highlightIndex = -1; // -1 = none highlighted
-  // highlight driven by startLoop onSentenceChanged — no Timer needed
+  int   _highlightIndex = -1;
 
   // ── Voice command ─────────────────────────────────────────
   bool   _micListening = false;
@@ -136,7 +131,6 @@ class _TermsScreenState extends State<TermsScreen> {
     );
   }
 
-  // ── Scroll a section into view ────────────────────────────
   void _scrollToSection(int index) {
     if (index < 0 || index >= _sectionKeys.length) return;
     final ctx = _sectionKeys[index].currentContext;
@@ -145,19 +139,16 @@ class _TermsScreenState extends State<TermsScreen> {
       ctx,
       duration: const Duration(milliseconds: 500),
       curve: Curves.easeOut,
-      alignment: 0.1, // slight top padding
+      alignment: 0.1,
     );
   }
 
-  // ── TTS toggle — uses startLoop for perfect sync ──────────
-  // Each section is its own "sentence". onSentenceChanged fires the
-  // instant Piper starts playing that section — zero timer guessing.
   Future<void> _toggleTts() async {
     if (_ttsPlaying) {
-      await _tts.stop(); // stopLoop() fires onFinished(false) internally
+      await _tts.stop();
     } else {
       if (mounted) setState(() => _ttsPlaying = true);
-      await _tts.init(); // ensure service is ready
+      await _tts.init();
       _tts.startLoop(
         sentences: _termsSentences,
         startIndex: 0,
@@ -170,7 +161,7 @@ class _TermsScreenState extends State<TermsScreen> {
         onFinished: (completed) {
           if (!mounted) return;
           setState(() {
-            _ttsPlaying = false;
+            _ttsPlaying     = false;
             _highlightIndex = -1;
           });
           if (completed && !_hasScrolledToBottom) _scrollToBottom();
@@ -231,7 +222,7 @@ class _TermsScreenState extends State<TermsScreen> {
   void _voiceRead() => _toggleTts();
 
   void _voiceStop() async {
-    await _tts.stop(); // stopLoop fires onFinished(false) → resets state via callback
+    await _tts.stop();
   }
 
   void _voiceScrollDown() {
@@ -267,17 +258,29 @@ class _TermsScreenState extends State<TermsScreen> {
   void dispose() {
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
+    // ── FIX: fully reset TTS loop state on dispose so the singleton
+    //         does not carry terms sentences into AnalyzeScreen ──────
     _tts.stop();
+    _tts.resetLoopState();   // ← clears sentences/index from singleton
     _cmdSub?.cancel();
     _textSub?.cancel();
     _stateSub?.cancel();
     SpeechRecognitionService.instance.stopRecording();
+    // ── FIX: unregister all commands so they don't fire in other screens
+    VoiceCommandService.instance.unregisterAll();
     super.dispose();
   }
 
   Future<void> _onAccept() async {
+    // ── FIX: stop + fully reset loop state before navigating ────────
     await _tts.stop();
+    _tts.resetLoopState();   // ← key fix: clears terms sentences from singleton
+
     await SpeechRecognitionService.instance.stopRecording();
+
+    // Unregister terms-screen commands before pushing next route
+    VoiceCommandService.instance.unregisterAll();
+
     await markTermsAccepted();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -308,7 +311,6 @@ class _TermsScreenState extends State<TermsScreen> {
       canPop: false,
       child: Scaffold(
         backgroundColor: _bg,
-        // Lift FABs higher — use endDocked or a custom bottom offset via padding
         floatingActionButton: _buildFabs(),
         floatingActionButtonLocation: FloatingActionButtonLocation.endFloat,
         body: SafeArea(
@@ -320,7 +322,6 @@ class _TermsScreenState extends State<TermsScreen> {
                   children: [
                     ListView.separated(
                       controller: _scrollCtrl,
-                      // Extra bottom padding so content clears the tall FAB column
                       padding: const EdgeInsets.fromLTRB(20, 16, 20, 140),
                       itemCount: _terms.length,
                       separatorBuilder: (_, __) => const SizedBox(height: 20),
@@ -381,15 +382,13 @@ class _TermsScreenState extends State<TermsScreen> {
 
   // ── FABs ──────────────────────────────────────────────────
   Widget _buildFabs() {
-    // Wrap in Padding to push the whole FAB column upward
     return Padding(
-      padding: const EdgeInsets.only(bottom: 200), // ← lifts FABs up
+      padding: const EdgeInsets.only(bottom: 200),
       child: Column(
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
 
-          // Live mic display bubble
           if (_micListening && _micDisplay.isNotEmpty)
             Container(
               margin: const EdgeInsets.only(bottom: 6, right: 4),
@@ -408,7 +407,6 @@ class _TermsScreenState extends State<TermsScreen> {
               ),
             ),
 
-          // ── Mic button (bigger: 64×64) ─────────────────────
           GestureDetector(
             onTapDown: (_) {
               setState(() => _micDisplay = '');
@@ -423,8 +421,8 @@ class _TermsScreenState extends State<TermsScreen> {
               children: [
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  width: 64,   // ← was 52
-                  height: 64,  // ← was 52
+                  width: 64,
+                  height: 64,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: _micListening
@@ -444,7 +442,7 @@ class _TermsScreenState extends State<TermsScreen> {
                   child: Icon(
                     _micListening ? Icons.mic : Icons.mic_none,
                     color: Colors.white,
-                    size: 30,  // ← was 24
+                    size: 30,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -462,7 +460,6 @@ class _TermsScreenState extends State<TermsScreen> {
 
           const SizedBox(height: 14),
 
-          // ── TTS read/pause button (bigger: 64×64) ──────────
           GestureDetector(
             onTap: _ttsReady ? _toggleTts : null,
             child: Column(
@@ -470,8 +467,8 @@ class _TermsScreenState extends State<TermsScreen> {
               children: [
                 AnimatedContainer(
                   duration: const Duration(milliseconds: 180),
-                  width: 64,   // ← was 52
-                  height: 64,  // ← was 52
+                  width: 64,
+                  height: 64,
                   decoration: BoxDecoration(
                     shape: BoxShape.circle,
                     color: _ttsPlaying
@@ -490,7 +487,7 @@ class _TermsScreenState extends State<TermsScreen> {
                         ? Icons.pause_rounded
                         : Icons.volume_up_rounded,
                     color: _ttsPlaying ? Colors.white : _accent,
-                    size: 30,  // ← was 24
+                    size: 30,
                   ),
                 ),
                 const SizedBox(height: 4),
@@ -505,8 +502,6 @@ class _TermsScreenState extends State<TermsScreen> {
               ],
             ),
           ),
-
-
         ],
       ),
     );
@@ -604,7 +599,6 @@ class _TermsScreenState extends State<TermsScreen> {
       child: Column(
         mainAxisSize: MainAxisSize.min,
         children: [
-          // Checkbox
           GestureDetector(
             onTap: _hasScrolledToBottom
                 ? () => setState(
@@ -654,7 +648,6 @@ class _TermsScreenState extends State<TermsScreen> {
 
           const SizedBox(height: 16),
 
-          // Accept button
           SizedBox(
             width: double.infinity,
             child: AnimatedOpacity(
@@ -683,7 +676,6 @@ class _TermsScreenState extends State<TermsScreen> {
 
           const SizedBox(height: 10),
 
-          // Decline button
           SizedBox(
             width: double.infinity,
             child: TextButton(
@@ -727,7 +719,7 @@ class _TermsSection extends StatelessWidget {
   });
 
   static const Color _accent      = Color(0xFF38616A);
-  static const Color _highlightBg = Color(0xFFE0F2F1); // soft teal tint
+  static const Color _highlightBg = Color(0xFFE0F2F1);
 
   @override
   Widget build(BuildContext context) {
@@ -755,7 +747,6 @@ class _TermsSection extends StatelessWidget {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // Reading indicator dot + title row
           Row(
             children: [
               if (highlighted)

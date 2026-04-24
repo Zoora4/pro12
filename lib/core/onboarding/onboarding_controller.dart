@@ -104,6 +104,19 @@ const List<OnboardingStep> onboardingSteps = [
         'The setting stays wherever you leave it.',
     accentColor: Color(0xFF2196F3),
   ),
+  // ── NEW STEP ──────────────────────────────────────────────
+  OnboardingStep(
+    icon: Icons.mic,
+    title: 'Voice Commands',
+    subtitle: 'Control Readify hands-free with your voice.',
+    narration:
+        'You can control Readify using your voice — no tapping needed. '
+        'Say "Play" to begin listening, and "Pause" or "Stop" to pause. '
+        'and "Change voice" to switch between available voices. '
+        'Just tap the microphone icon on the reader screen to activate voice commands.',
+    accentColor: Color(0xFFE91E63),
+  ),
+  // ─────────────────────────────────────────────────────────
   OnboardingStep(
     icon: Icons.record_voice_over,
     title: 'Choose a Voice',

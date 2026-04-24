@@ -28,13 +28,10 @@ class _HomeScreenState extends State<HomeScreen> {
 
     // ── Register commands in UPPERCASE ────────────────────────
     VoiceCommandService.instance.registerCommand('CAMERA', _toCamera);
-    VoiceCommandService.instance.registerCommand('SCAN', _toCamera);
-    VoiceCommandService.instance.registerCommand('ONE', _toCamera);
     VoiceCommandService.instance.registerCommand('PHOTO', _toCamera);
     VoiceCommandService.instance.registerCommand('TAKE', _toCamera);
     VoiceCommandService.instance.registerCommand('CAPTURE', _toCamera);
     VoiceCommandService.instance.registerCommand('DOCUMENT', _toUpload);
-    VoiceCommandService.instance.registerCommand('TWO', _toUpload);
     VoiceCommandService.instance.registerCommand('UPLOAD', _toUpload);
     VoiceCommandService.instance.registerCommand('FILE', _toUpload);
 
@@ -198,7 +195,7 @@ class _HomeScreenState extends State<HomeScreen> {
               duration: const Duration(milliseconds: 200),
               opacity: _isListening ? 0.0 : 1.0,
               child: Text(
-                '"Camera"  ·  "Document"  ·  "Upload"',
+                'Camera  ·  Document',
                 style:
                     TextStyle(fontSize: 11, color: Colors.grey.shade600),
                 textAlign: TextAlign.center,
@@ -336,7 +333,7 @@ class _HelpSheet extends StatelessWidget {
             iconColor: const Color(0xFF38616A),
             title: 'Voice Commands',
             subtitle:
-                'Hold the mic and say "Camera", "Document" or "Upload"',
+                'Hold the mic and say "Camera", "Document"',
             onTap: () => Navigator.of(context).pop(),
           ),
           const SizedBox(height: 12),

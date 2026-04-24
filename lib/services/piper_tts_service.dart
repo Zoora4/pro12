@@ -263,8 +263,6 @@ class PiperTtsService {
   int _loopGen = 0;
   bool _loopRunning = false;
 
-  // FIX 3: Store the active onFinished callback so stopLoop() can always
-  // fire it, even when the loop exits mid-sentence due to engine/voice switch.
   void Function(bool)? _activeOnFinished;
 
   // ── Init ──────────────────────────────────────────────────────
@@ -398,21 +396,16 @@ class PiperTtsService {
   }
 
   // ── Engine switching ──────────────────────────────────────────
-  // FIX 3: setEngine calls stopLoop() which now fires _activeOnFinished(false),
-  // so the controller resets isPlaying correctly before we switch engine.
   Future<void> setEngine(TtsEngine engine) async {
     if (_engine == engine) return;
-    await stopLoop(); // fires _activeOnFinished(false) if a loop is running
+    await stopLoop();
     _engine = engine;
   }
 
   // ── Piper voice switching ─────────────────────────────────────
-  // FIX 2 (voice switch): stopLoop() fires _activeOnFinished(false) so the
-  // controller's isPlaying is reset. The screen then restarts from the saved
-  // sentence index via readFromSentence() after this future resolves.
   Future<void> switchVoice(VoiceModel voice) async {
     if (!_initialized) await init();
-    await stopLoop(); // resets controller state via _activeOnFinished
+    await stopLoop();
     _activeVoice = voice;
     final modelPath = '$_modelDir/${voice.assetOnnx.split('/').last}';
     await _isolate.spawn(modelPath, _tokensPath, _espeakDir);
@@ -454,27 +447,20 @@ class PiperTtsService {
   void setPitch(double pitch) => _currentPitch = pitch.clamp(0.5, 2.0);
 
   // ═══════════════════════════════════════════════════════════════
-  // LOOP API  (called by AnalyzeController)
+  // LOOP API
   // ═══════════════════════════════════════════════════════════════
-
-  // FIX 1: Accept a speedGetter closure instead of a fixed double so that
-  // speed changes made via setSpeed() take effect on the very next sentence
-  // without restarting the loop.
   Future<void> startLoop({
     required List<String> sentences,
     required int startIndex,
-    required double Function() speedGetter, // ← was: double speed
+    required double Function() speedGetter,
     required void Function(int index) onSentenceChanged,
     required void Function(bool completed) onFinished,
   }) async {
     if (!_initialized) await init();
 
-    // Cancel any running loop and fire its onFinished(false) first
     _loopGen++;
     final gen = _loopGen;
     _loopRunning = true;
-
-    // Save callback so stopLoop() can always fire it
     _activeOnFinished = onFinished;
 
     if (_engine == TtsEngine.flutterTts) {
@@ -498,10 +484,8 @@ class PiperTtsService {
     }
   }
 
-  // FIX 3: stopLoop() now always fires _activeOnFinished(false) so the
-  // controller's isPlaying is always reset, regardless of how the loop dies.
   Future<void> stopLoop() async {
-    _loopGen++; // invalidates any running loop iteration
+    _loopGen++;
     _loopRunning = false;
     _isolate.cancelAll();
     await _playerA.stop();
@@ -510,20 +494,28 @@ class PiperTtsService {
       await _fTts.stop();
     } catch (_) {}
 
-    // Always notify the controller that the loop has ended
     final cb = _activeOnFinished;
     _activeOnFinished = null;
-    cb?.call(false); // false = not naturally completed, was stopped
+    cb?.call(false);
+  }
+
+  // ── NEW: silently clears loop state without firing onFinished ─
+  // Call this when leaving a screen that used startLoop() so the
+  // singleton does not carry stale sentences into the next screen.
+  void resetLoopState() {
+    _loopGen++;          // invalidates any in-flight loop iteration
+    _loopRunning = false;
+    _activeOnFinished = null;   // drop the callback — do NOT fire it
+    _isolate.cancelAll();       // cancel any pending isolate generation
   }
 
   bool get isLoopRunning => _loopRunning;
 
   // ── Piper ping-pong loop ──────────────────────────────────────
-  // FIX 1: Uses speedGetter() per sentence so live speed changes are applied.
   Future<void> _loopPiper({
     required List<String> sentences,
     required int startIndex,
-    required double Function() speedGetter, // ← closure, always fresh
+    required double Function() speedGetter,
     required int gen,
     required void Function(int) onSentenceChanged,
     required void Function(bool) onFinished,
@@ -537,13 +529,10 @@ class PiperTtsService {
 
     _slotA = true;
 
-    // Generate the very first sentence up front
     Uint8List? currentBytes =
         await _isolate.generate(sentences[startIndex], speedGetter());
 
     if (_loopGen != gen) {
-      // Loop was cancelled while we were generating — onFinished already fired
-      // by stopLoop(), so just return.
       _loopRunning = false;
       return;
     }
@@ -557,7 +546,6 @@ class PiperTtsService {
       if (file == null || currentBytes == null || currentBytes.isEmpty) {
         _slotA = !_slotA;
         if (i + 1 < sentences.length) {
-          // FIX 1: read speed fresh for each sentence
           currentBytes =
               await _isolate.generate(sentences[i + 1], speedGetter());
         }
@@ -566,14 +554,11 @@ class PiperTtsService {
 
       await file.writeAsBytes(currentBytes, flush: true);
 
-      // Kick off generation of the NEXT sentence in parallel
-      // FIX 1: use speedGetter() so any mid-loop speed change is picked up
       Future<Uint8List?>? nextFuture;
       if (i + 1 < sentences.length) {
         nextFuture = _isolate.generate(sentences[i + 1], speedGetter());
       }
 
-      // Play current sentence
       final player = _currentPlayer;
       await player.stop();
       try {
@@ -587,7 +572,6 @@ class PiperTtsService {
 
       await player.play();
 
-      // Wait for playback to finish or loop to be cancelled
       try {
         await player.processingStateStream
             .firstWhere((s) =>
@@ -602,23 +586,20 @@ class PiperTtsService {
       _slotA = !_slotA;
     }
 
-    // Only fire onFinished if this loop generation is still the active one.
-    // If _loopGen != gen it means stopLoop() already fired the callback.
     if (_loopGen == gen) {
       _loopRunning = false;
       _activeOnFinished = null;
-      onFinished(true); // true = reached the end naturally
+      onFinished(true);
     } else {
       _loopRunning = false;
     }
   }
 
   // ── Flutter TTS loop ──────────────────────────────────────────
-  // FIX 1: Uses speedGetter() per sentence so live speed changes apply.
   Future<void> _loopFlutterTts({
     required List<String> sentences,
     required int startIndex,
-    required double Function() speedGetter, // ← closure, always fresh
+    required double Function() speedGetter,
     required int gen,
     required void Function(int) onSentenceChanged,
     required void Function(bool) onFinished,
@@ -632,7 +613,6 @@ class PiperTtsService {
 
       final completer = Completer<void>();
 
-      // FIX 1: read speed fresh every sentence
       final rate = ((speedGetter() - 0.5) / 1.5).clamp(0.0, 1.0);
       try {
         await _fTts.setSpeechRate(rate);
@@ -650,7 +630,6 @@ class PiperTtsService {
       await completer.future;
     }
 
-    // Same guard as Piper loop: only fire if we're still the active generation
     if (_loopGen == gen) {
       _loopRunning = false;
       _activeOnFinished = null;
@@ -660,7 +639,7 @@ class PiperTtsService {
     }
   }
 
-  // ── Legacy single-speak (kept for health check only) ─────────
+  // ── Legacy single-speak (kept for health check / onboarding) ─
   Future<void> speak(String text, {double speed = 1.0}) async {
     if (!_initialized) await init();
     if (text.trim().isEmpty) return;

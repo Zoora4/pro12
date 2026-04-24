@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
@@ -8,7 +9,8 @@ import '../../services/speech_recognition_service.dart';
 import 'analyze_controller.dart';
 
 // ── Easy-to-tweak position constants ─────────────────────────
-const double _kFabBottomOffset = 16.0;
+
+const double _kFabBottomOffset = 25.0;
 const double _kFabRightOffset  = 16.0;
 const double _kFabLeftOffset   = 16.0;
 
@@ -73,6 +75,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   }
 
   Future<void> _init() async {
+    // ── Flush any lingering TTS from onboarding before loading ──
+    final tts = PiperTtsService();
+    await tts.stop();
+    tts.resetLoopState(); // ← Clear cached sentences from previous screens
+
     await controller.loadFile(
       widget.filePath,
       overrideText: widget.overrideText,
@@ -153,6 +160,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
   }
 
   void _handlePlayPause() {
+    // ── Guard: never play until document is fully loaded ────────
+    if (!_loaded) return;
+
     final wasPlaying = controller.isPlaying;
     controller.playPause(_refresh);
     if (!wasPlaying && !controller.isReadMode) {
@@ -503,11 +513,12 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           // ── Voice Command FAB (bottom-left) ──────────────────
           if (_loaded)
             Positioned(
-              bottom: _bottomBarHeight + safeBottom + _kFabBottomOffset,
+              bottom: _bottomBarHeight + safeBottom + 55 + _kFabBottomOffset,
               left: _kFabLeftOffset,
               child: _VoiceCommandFab(
                 isPlaying: controller.isPlaying,
-                onPlay:  _handlePlayPause,
+                isLoaded: _loaded,
+                onPlay: _handlePlayPause,
                 onPause: _handlePlayPause,
                 onStop: () => controller.stop(() {
                   if (mounted) setState(() {});
@@ -523,6 +534,9 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                 onRefresh: () {
                   if (mounted) setState(() {});
                 },
+                getSelectedText: () => _selectedText,
+                onReadSelection: _startReadSelection,
+                documentSentences: controller.sentences,
               ),
             ),
 
@@ -804,6 +818,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
 // ═══════════════════════════════════════════════════════════════
 class _VoiceCommandFab extends StatefulWidget {
   final bool isPlaying;
+  final bool isLoaded;
   final VoidCallback onPlay;
   final VoidCallback onPause;
   final VoidCallback onStop;
@@ -812,9 +827,13 @@ class _VoiceCommandFab extends StatefulWidget {
   final ValueChanged<VoiceModel> onSelectVoice;
   final VoidCallback onRefresh;
   final VoidCallback onOpenVoiceSelector;
+  final String Function() getSelectedText;
+  final ValueChanged<String> onReadSelection;
+  final List<String> documentSentences;
 
   const _VoiceCommandFab({
     required this.isPlaying,
+    required this.isLoaded,
     required this.onPlay,
     required this.onPause,
     required this.onStop,
@@ -823,6 +842,9 @@ class _VoiceCommandFab extends StatefulWidget {
     required this.onSelectVoice,
     required this.onRefresh,
     required this.onOpenVoiceSelector,
+    required this.getSelectedText,
+    required this.onReadSelection,
+    required this.documentSentences,
   });
 
   @override
@@ -837,16 +859,21 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
 
   bool _wasPlayingBeforeMenu = false;
 
+  // ── Stream subscriptions to cancel on dispose ─────────────────
+  StreamSubscription<String>? _textSub;
+  StreamSubscription<String>? _cmdSub;
+  StreamSubscription<bool>?   _stateSub;
+
   @override
   void initState() {
     super.initState();
 
-    SpeechRecognitionService.instance.textStream.listen((text) {
+    _textSub = SpeechRecognitionService.instance.textStream.listen((text) {
       if (!mounted) return;
       setState(() => _spokenText = text);
     });
 
-    SpeechRecognitionService.instance.commandStream.listen((text) {
+    _cmdSub = SpeechRecognitionService.instance.commandStream.listen((text) {
       if (!mounted) return;
       final upper = text.toUpperCase().trim();
       if (_awaitingVoicePick) {
@@ -856,10 +883,18 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
       }
     });
 
-    SpeechRecognitionService.instance.stateStream.listen((rec) {
+    _stateSub = SpeechRecognitionService.instance.stateStream.listen((rec) {
       if (!mounted) return;
       setState(() => _isListening = rec);
     });
+  }
+
+  @override
+  void dispose() {
+    _textSub?.cancel();
+    _cmdSub?.cancel();
+    _stateSub?.cancel();
+    super.dispose();
   }
 
   void _handleVoiceCommand(String upper) {
@@ -877,11 +912,30 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
 
     } else if (upper.contains('PLAY') ||
                upper.contains('RESUME') ||
+               upper.contains('START') ||
                upper.contains('READ')) {
+
+      // Guard: ignore command if document not ready yet
+      if (!widget.isLoaded) {
+        _showBubble('Still loading…');
+        return;
+      }
+
+      // 1. Prioritise any highlighted/selected text
+      final sel = widget.getSelectedText().trim();
+      if (sel.isNotEmpty) {
+        widget.onReadSelection(sel);
+        widget.onRefresh();
+        _showBubble('Reading selection.');
+        return;
+      }
+
+      // 2. Fall back to main player — preserves sentence highlighting
+      //    and always uses controller.sentences (the extracted document text)
       if (!widget.isPlaying) {
         widget.onPlay();
         widget.onRefresh();
-        _showBubble('Playing.');
+        _showBubble('Playing document.');
       }
 
     } else if (upper.contains('VOICE') ||
@@ -1044,14 +1098,13 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
         ? (_spokenText.isEmpty ? 'Listening…' : _spokenText)
         : _bubbleText;
 
-    // Fixed-width column so the FAB never shifts position
     return SizedBox(
       width: 240,
       child: Column(
         mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start, // bubble left-aligned
+        crossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          // ── Speech bubble (left-aligned, stable height slot) ──
+          // ── Speech bubble ─────────────────────────────────────
           AnimatedSwitcher(
             duration: const Duration(milliseconds: 220),
             transitionBuilder: (child, anim) => FadeTransition(
@@ -1068,7 +1121,6 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
                     margin: const EdgeInsets.only(bottom: 8),
                     padding: const EdgeInsets.symmetric(
                         horizontal: 14, vertical: 10),
-                    // No maxWidth constraint — parent SizedBox controls width
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(20),
@@ -1088,7 +1140,7 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
                     ),
                     child: Text(
                       bubbleContent,
-                      textAlign: TextAlign.left, // ← left-aligned text
+                      textAlign: TextAlign.left,
                       style: TextStyle(
                         fontSize: 12,
                         fontWeight: FontWeight.w600,
@@ -1103,7 +1155,7 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
                 : const SizedBox.shrink(key: ValueKey('empty')),
           ),
 
-          // ── Mic FAB — fixed 64×64, never shifts ──────────────
+          // ── Mic FAB ───────────────────────────────────────────
           SizedBox(
             width: 64,
             height: 64,
@@ -1146,7 +1198,7 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
             ),
           ),
 
-          // ── Label — fixed height so layout never jumps ────────
+          // ── Label ─────────────────────────────────────────────
           const SizedBox(height: 4),
           SizedBox(
             height: 14,
