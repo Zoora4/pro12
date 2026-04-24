@@ -1,4 +1,4 @@
-# Your App Name
+# Readify
 
 A beautiful Flutter mobile application built with ❤️.
 
