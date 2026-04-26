@@ -10,7 +10,7 @@ import 'analyze_controller.dart';
 
 // ── Easy-to-tweak position constants ─────────────────────────
 
-const double _kFabBottomOffset = 25.0;
+const double _kFabBottomOffset = 10.0;
 const double _kFabRightOffset  = 16.0;
 const double _kFabLeftOffset   = 16.0;
 
@@ -513,7 +513,7 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
           // ── Voice Command FAB (bottom-left) ──────────────────
           if (_loaded)
             Positioned(
-              bottom: _bottomBarHeight + safeBottom + 55 + _kFabBottomOffset,
+              bottom: _bottomBarHeight + safeBottom + 40 + _kFabBottomOffset,
               left: _kFabLeftOffset,
               child: _VoiceCommandFab(
                 isPlaying: controller.isPlaying,
@@ -881,6 +881,8 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
       } else {
         _handleVoiceCommand(upper);
       }
+      // ── Auto-stop listening after command recognized ──────────
+      _stopMic();
     });
 
     _stateSub = SpeechRecognitionService.instance.stateStream.listen((rec) {
@@ -897,7 +899,7 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
     super.dispose();
   }
 
-  void _handleVoiceCommand(String upper) {
+void _handleVoiceCommand(String upper) {
     if (upper.contains('STOP')) {
       widget.onStop();
       widget.onRefresh();
@@ -915,13 +917,11 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
                upper.contains('START') ||
                upper.contains('READ')) {
 
-      // Guard: ignore command if document not ready yet
       if (!widget.isLoaded) {
         _showBubble('Still loading…');
         return;
       }
 
-      // 1. Prioritise any highlighted/selected text
       final sel = widget.getSelectedText().trim();
       if (sel.isNotEmpty) {
         widget.onReadSelection(sel);
@@ -930,8 +930,6 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
         return;
       }
 
-      // 2. Fall back to main player — preserves sentence highlighting
-      //    and always uses controller.sentences (the extracted document text)
       if (!widget.isPlaying) {
         widget.onPlay();
         widget.onRefresh();
@@ -942,6 +940,10 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
                upper.contains('SWITCH') ||
                upper.contains('CHANGE')) {
       _startVoiceMenu();
+
+    } else if (upper.contains('CLOSE') || upper.contains('BACK')) {
+      // ← new: lets user dismiss any open dialog by voice
+      Navigator.of(context).maybePop();
     }
   }
 
@@ -989,8 +991,7 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
 
     if (upper.contains('CANCEL') ||
         upper.contains('NEVERMIND') ||
-        upper.contains('NEVER MIND') ||
-        upper.contains('BACK')) {
+        upper.contains('NEVER MIND')) {
       setState(() {
         _awaitingVoicePick = false;
         _bubbleText        = 'Cancelled.';
@@ -1090,6 +1091,14 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
     SpeechRecognitionService.instance.stopRecording();
   }
 
+  void _toggleMic() {
+    if (_isListening) {
+      _stopMic();
+    } else {
+      _startMic();
+    }
+  }
+
   // ── Build ─────────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
@@ -1160,9 +1169,7 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
             width: 64,
             height: 64,
             child: GestureDetector(
-              onLongPressStart: (_) => _startMic(),
-              onLongPressEnd:   (_) => _stopMic(),
-              onLongPressCancel: _stopMic,
+              onTap: _toggleMic,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 200),
                 decoration: BoxDecoration(
@@ -1205,7 +1212,7 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
             child: AnimatedSwitcher(
               duration: const Duration(milliseconds: 200),
               child: Text(
-                _awaitingVoicePick ? 'Say a number' : 'Hold to talk',
+                _awaitingVoicePick ? 'Say a number' : 'Tap to talk',
                 key: ValueKey(_awaitingVoicePick),
                 style: TextStyle(
                   fontSize: 10,

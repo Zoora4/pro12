@@ -196,9 +196,11 @@ class _TermsScreenState extends State<TermsScreen> {
       setState(() => _micDisplay = t);
     });
 
+    // ── KEY CHANGE: auto-stop mic after command is detected ──
     _cmdSub = SpeechRecognitionService.instance.commandStream.listen((t) {
       if (!mounted) return;
       VoiceCommandService.instance.processText(t);
+      SpeechRecognitionService.instance.stopRecording();
     });
 
     _stateSub = SpeechRecognitionService.instance.stateStream.listen((v) {
@@ -258,27 +260,22 @@ class _TermsScreenState extends State<TermsScreen> {
   void dispose() {
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
-    // ── FIX: fully reset TTS loop state on dispose so the singleton
-    //         does not carry terms sentences into AnalyzeScreen ──────
     _tts.stop();
-    _tts.resetLoopState();   // ← clears sentences/index from singleton
+    _tts.resetLoopState();
     _cmdSub?.cancel();
     _textSub?.cancel();
     _stateSub?.cancel();
     SpeechRecognitionService.instance.stopRecording();
-    // ── FIX: unregister all commands so they don't fire in other screens
     VoiceCommandService.instance.unregisterAll();
     super.dispose();
   }
 
   Future<void> _onAccept() async {
-    // ── FIX: stop + fully reset loop state before navigating ────────
     await _tts.stop();
-    _tts.resetLoopState();   // ← key fix: clears terms sentences from singleton
+    _tts.resetLoopState();
 
     await SpeechRecognitionService.instance.stopRecording();
 
-    // Unregister terms-screen commands before pushing next route
     VoiceCommandService.instance.unregisterAll();
 
     await markTermsAccepted();
@@ -407,15 +404,14 @@ class _TermsScreenState extends State<TermsScreen> {
               ),
             ),
 
+          // ── KEY CHANGE: tap to start, auto-stops when command detected ──
           GestureDetector(
-            onTapDown: (_) {
-              setState(() => _micDisplay = '');
-              SpeechRecognitionService.instance.startRecording();
+            onTap: () {
+              if (!_micListening) {
+                setState(() => _micDisplay = '');
+                SpeechRecognitionService.instance.startRecording();
+              }
             },
-            onTapUp: (_) =>
-                SpeechRecognitionService.instance.stopRecording(),
-            onTapCancel: () =>
-                SpeechRecognitionService.instance.stopRecording(),
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -447,7 +443,7 @@ class _TermsScreenState extends State<TermsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  _micListening ? 'Listening' : 'Hold',
+                  _micListening ? 'Listening...' : 'Tap',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -565,7 +561,7 @@ class _TermsScreenState extends State<TermsScreen> {
                 Icon(Icons.mic, color: Colors.white70, size: 14),
                 SizedBox(width: 6),
                 Text(
-                  'Say "Read terms"  ·  "Accept"',
+                  'Tap mic · Say "Read terms"  ·  "Accept"',
                   style: TextStyle(
                     color: Colors.white70,
                     fontSize: 11,

@@ -48,7 +48,8 @@ const List<OnboardingStep> onboardingSteps = [
     title: 'Welcome to Readify',
     subtitle: "I'm Amy — your reading companion.",
     narration:
-        'Hi there! Welcome to Readify. I\'m Amy, and I\'ll be your guide. '
+        'Hi there! Welcome to Readify. '
+        "I'm Amy, and I'll be your guide. "
         'Readify turns text from photos and documents into clear spoken audio, '
         'entirely offline on your device. '
         'Tap anywhere on the screen to move to the next step.',
@@ -104,19 +105,17 @@ const List<OnboardingStep> onboardingSteps = [
         'The setting stays wherever you leave it.',
     accentColor: Color(0xFF2196F3),
   ),
-  // ── NEW STEP ──────────────────────────────────────────────
   OnboardingStep(
     icon: Icons.mic,
     title: 'Voice Commands',
     subtitle: 'Control Readify hands-free with your voice.',
     narration:
         'You can control Readify using your voice — no tapping needed. '
-        'Say "Play" to begin listening, and "Pause" or "Stop" to pause. '
-        'and "Change voice" to switch between available voices. '
+        'Say Play to begin listening, and Pause or Stop to pause. '
+        'Say Change voice to switch between available voices. '
         'Just tap the microphone icon on the reader screen to activate voice commands.',
     accentColor: Color(0xFFE91E63),
   ),
-  // ─────────────────────────────────────────────────────────
   OnboardingStep(
     icon: Icons.record_voice_over,
     title: 'Choose a Voice',
@@ -124,8 +123,8 @@ const List<OnboardingStep> onboardingSteps = [
     narration:
         'Tap the green microphone button inside the reader to change the reading voice. '
         'You can choose between Lessac, Alan, or me, Amy! '
-        'You can also use your device\'s built-in voices. '
-        'That\'s everything — you\'re all set! Enjoy Readify!',
+        "You can also use your device's built-in voices. "
+        "That's everything — you're all set! Enjoy Readify!",
     accentColor: Color(0xFF9C27B0),
   ),
 ];
@@ -143,19 +142,29 @@ class OnboardingController extends ChangeNotifier {
   bool _active = false;
   bool _isSpeaking = false;
   bool _isSkipping = false;
-  bool _isReplaying = false;  // ← NEW: tracks replay loading state
+  bool _isReplaying = false;
   int _stepIndex = 0;
 
   bool get active => _active;
   bool get isSpeaking => _isSpeaking;
   bool get isSkipping => _isSkipping;
-  bool get isReplaying => _isReplaying;  // ← NEW
+  bool get isReplaying => _isReplaying;
   int get stepIndex => _stepIndex;
   int get totalSteps => onboardingSteps.length;
   OnboardingStep get currentStep => onboardingSteps[_stepIndex];
 
   void assignKeys() {}
 
+  // ── Split narration into sentences ────────────────────────────
+  List<String> _splitNarration(String narration) {
+    return narration
+        .split(RegExp(r'(?<=[.!?])\s+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+  }
+
+  // ── Start ─────────────────────────────────────────────────────
   Future<void> start() async {
     _active = true;
     _stepIndex = 0;
@@ -165,12 +174,10 @@ class OnboardingController extends ChangeNotifier {
     await _speakCurrent();
   }
 
-  /// Called from the Help sheet tap — handles the full replay flow
-  /// including TTS re-init, all from within MainNavScreen's lifetime.
+  // ── Replay ────────────────────────────────────────────────────
   Future<void> requestReplay() async {
     if (_isReplaying) return;
 
-    // Show loading state — MainNavScreen listener rebuilds immediately
     _isReplaying = true;
     _safeNotify();
 
@@ -182,26 +189,39 @@ class OnboardingController extends ChangeNotifier {
       }
     } catch (_) {}
 
-    // Start onboarding — _isReplaying cleared inside start()
     await start();
   }
 
+  // ── Speak current step using ping-pong loop ───────────────────
   Future<void> _speakCurrent() async {
     if (!_active || _isSkipping) return;
     _isSpeaking = true;
     _safeNotify();
+
     try {
-      await PiperTtsService().speak(currentStep.narration, speed: 1.0);
-    } catch (_) {}
-    if (_active && !_isSkipping) {
+      final sentences = _splitNarration(currentStep.narration);
+      await PiperTtsService().startLoop(
+        sentences: sentences,
+        startIndex: 0,
+        speedGetter: () => 1.0,
+        onSentenceChanged: (_) {},
+        onFinished: (_) {
+          if (_active && !_isSkipping) {
+            _isSpeaking = false;
+            _safeNotify();
+          }
+        },
+      );
+    } catch (_) {
       _isSpeaking = false;
       _safeNotify();
     }
   }
 
+  // ── Fast forward ──────────────────────────────────────────────
   Future<void> fastForward() async {
     if (!_active || _isSkipping) return;
-    await PiperTtsService().stop();
+    PiperTtsService().resetLoopState();
     _isSpeaking = false;
 
     if (_stepIndex >= onboardingSteps.length - 1) {
@@ -213,20 +233,29 @@ class OnboardingController extends ChangeNotifier {
     }
   }
 
+  // ── Skip ──────────────────────────────────────────────────────
   Future<void> skip() async {
     if (_isSkipping) return;
     _isSkipping = true;
     _safeNotify();
-    await PiperTtsService().stop();
+    PiperTtsService().resetLoopState();
+
     try {
-      await PiperTtsService()
-          .speak('Skipping the tour. Enjoy Readify!', speed: 1.0);
+      await PiperTtsService().startLoop(
+        sentences: ['Skipping the tour.', 'Enjoy Readify!'],
+        startIndex: 0,
+        speedGetter: () => 1.0,
+        onSentenceChanged: (_) {},
+        onFinished: (_) {},
+      );
     } catch (_) {}
+
     await _finish();
   }
 
+  // ── Finish ────────────────────────────────────────────────────
   Future<void> _finish() async {
-    await PiperTtsService().stop();
+    PiperTtsService().resetLoopState();
     try {
       await PiperTtsService().switchVoice(availableVoices.first);
     } catch (_) {}
@@ -241,6 +270,18 @@ class OnboardingController extends ChangeNotifier {
     });
   }
 
+  // ── Called when app is backgrounded ──────────────────────────
+  void resetSpeakingState() {
+    _isSpeaking = false;
+    _safeNotify();
+  }
+
+  // ── Called when app resumes ───────────────────────────────────
+  Future<void> resumeSpeaking() async {
+    await _speakCurrent();
+  }
+
+  // ── Safe notify ───────────────────────────────────────────────
   void _safeNotify() {
     WidgetsBinding.instance.addPostFrameCallback((_) {
       notifyListeners();
@@ -249,7 +290,7 @@ class OnboardingController extends ChangeNotifier {
 
   @override
   void dispose() {
-    PiperTtsService().stop();
+    PiperTtsService().resetLoopState();
     super.dispose();
   }
 }

@@ -38,7 +38,38 @@ class _OnboardingOverlayState extends State<OnboardingOverlay> {
 
   @override
   Widget build(BuildContext context) {
-    if (!widget.controller.active) return widget.child;
+    final ctrl = widget.controller;
+
+    if (!ctrl.active) return widget.child;
+
+    // ── Loading screen while replay switches voice ────────────
+    if (ctrl.isReplaying && ctrl.stepIndex == 0 && !ctrl.isSpeaking) {
+      return Stack(
+        children: [
+          widget.child,
+          Container(
+            color: const Color(0xFF1A1A2E),
+            child: const Center(
+              child: Column(
+                mainAxisSize: MainAxisSize.min,
+                children: [
+                  CircularProgressIndicator(color: Color(0xFF1D9E75)),
+                  SizedBox(height: 20),
+                  Text(
+                    'Starting tour…',
+                    style: TextStyle(
+                      color: Colors.white,
+                      fontSize: 16,
+                      decoration: TextDecoration.none,
+                    ),
+                  ),
+                ],
+              ),
+            ),
+          ),
+        ],
+      );
+    }
 
     return Stack(
       children: [
@@ -83,12 +114,18 @@ class _OnboardingFullScreenState extends State<_OnboardingFullScreen>
     _anim.forward();
   }
 
+  // ── App lifecycle ─────────────────────────────────────────────
   @override
   void didChangeAppLifecycleState(AppLifecycleState state) {
     if (state == AppLifecycleState.paused ||
         state == AppLifecycleState.inactive ||
         state == AppLifecycleState.detached) {
-      PiperTtsService().stop();
+      PiperTtsService().resetLoopState();
+      widget.controller.resetSpeakingState();
+    } else if (state == AppLifecycleState.resumed) {
+      if (widget.controller.active) {
+        widget.controller.resumeSpeaking();
+      }
     }
   }
 
@@ -152,7 +189,7 @@ class _OnboardingFullScreenState extends State<_OnboardingFullScreen>
   }
 }
 
-// ── Top bar: step dots + skip ─────────────────────────────────
+// ── Top bar ───────────────────────────────────────────────────
 class _TopBar extends StatelessWidget {
   final OnboardingController controller;
   const _TopBar({required this.controller});
@@ -291,7 +328,7 @@ class _CardContent extends StatelessWidget {
   }
 }
 
-// ── Bottom: speaking indicator OR tap hint ────────────────────
+// ── Bottom area ───────────────────────────────────────────────
 class _BottomArea extends StatelessWidget {
   final OnboardingController controller;
   const _BottomArea({required this.controller});
@@ -307,7 +344,7 @@ class _BottomArea extends StatelessWidget {
   }
 }
 
-// ── Amy speaking badge with waveform ─────────────────────────
+// ── Amy speaking badge ────────────────────────────────────────
 class _SpeakingBadge extends StatefulWidget {
   const _SpeakingBadge({super.key});
 
@@ -399,7 +436,7 @@ class _SpeakingBadgeState extends State<_SpeakingBadge>
   }
 }
 
-// ── Tap to continue hint ──────────────────────────────────────
+// ── Tap hint ──────────────────────────────────────────────────
 class _TapHint extends StatefulWidget {
   const _TapHint({super.key});
 
@@ -435,7 +472,8 @@ class _TapHintState extends State<_TapHint>
     return FadeTransition(
       opacity: _opacity,
       child: Container(
-        padding: const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
+        padding:
+            const EdgeInsets.symmetric(horizontal: 28, vertical: 14),
         decoration: BoxDecoration(
           color: Colors.white.withOpacity(0.12),
           borderRadius: BorderRadius.circular(40),

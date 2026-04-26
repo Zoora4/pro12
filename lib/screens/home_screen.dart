@@ -1,4 +1,5 @@
 import 'package:flutter/material.dart';
+import 'package:pro12/core/onboarding/help_voice_commands_dialog.dart';
 import '../../services/speech_recognition_service.dart';
 import '../../services/voice_command_service.dart';
 import '../../core/onboarding/onboarding_controller.dart';
@@ -22,11 +23,10 @@ class _HomeScreenState extends State<HomeScreen> {
     super.initState();
     _setup();
   }
-
+  
   void _setup() async {
     await SpeechRecognitionService.instance.initialize();
 
-    // ── Register commands in UPPERCASE ────────────────────────
     VoiceCommandService.instance.registerCommand('CAMERA', _toCamera);
     VoiceCommandService.instance.registerCommand('PHOTO', _toCamera);
     VoiceCommandService.instance.registerCommand('TAKE', _toCamera);
@@ -34,27 +34,40 @@ class _HomeScreenState extends State<HomeScreen> {
     VoiceCommandService.instance.registerCommand('DOCUMENT', _toUpload);
     VoiceCommandService.instance.registerCommand('UPLOAD', _toUpload);
     VoiceCommandService.instance.registerCommand('FILE', _toUpload);
+    registerVoiceCommandsKeywords(context); // ✅ safe now inside postFrameCallback
 
-    // ── Wire streams ──────────────────────────────────────────
-
-    // ✅ textStream → display only, do NOT process commands here
-    // Processing commands on partials caused double-triggering
     SpeechRecognitionService.instance.textStream.listen((text) {
       if (!mounted) return;
       setState(() => _displayText = text);
-      // ❌ Removed: VoiceCommandService.instance.processText(text)
     });
 
-    // ✅ commandStream → commands only (fires on complete utterances)
     SpeechRecognitionService.instance.commandStream.listen((text) {
       if (!mounted) return;
+      final upper = text.toUpperCase();
+
+      // ← new: close any open dialog by voice
+      if (upper.contains('CLOSE') || upper.contains('BACK')) {
+        Navigator.of(context).maybePop();
+      }
+
       VoiceCommandService.instance.processText(text);
+      SpeechRecognitionService.instance.stopRecording();
     });
 
     SpeechRecognitionService.instance.stateStream.listen((isRec) {
       if (!mounted) return;
       setState(() => _isListening = isRec);
     });
+  }
+
+  // ── Mic toggle (press-only) ────────────────────────────────────
+  void _toggleMic() {
+    if (_isListening) {
+      SpeechRecognitionService.instance.stopRecording();
+    } else {
+      setState(() => _displayText = '');
+      SpeechRecognitionService.instance.startRecording();
+    }
   }
 
   // ── Navigation ────────────────────────────────────────────────
@@ -137,7 +150,7 @@ class _HomeScreenState extends State<HomeScreen> {
               child: Text(
                 _isListening
                     ? (_displayText.isEmpty ? 'Listening…' : _displayText)
-                    : 'Hold to speak',
+                    : 'Tap to speak',
                 key: ValueKey(_isListening ? _displayText : 'idle'),
                 textAlign: TextAlign.center,
                 style: TextStyle(
@@ -153,14 +166,7 @@ class _HomeScreenState extends State<HomeScreen> {
 
             // Mic button
             GestureDetector(
-              onTapDown: (_) {
-                setState(() => _displayText = '');
-                SpeechRecognitionService.instance.startRecording();
-              },
-              onTapUp: (_) =>
-                  SpeechRecognitionService.instance.stopRecording(),
-              onTapCancel: () =>
-                  SpeechRecognitionService.instance.stopRecording(),
+              onTap: _toggleMic,
               child: AnimatedContainer(
                 duration: const Duration(milliseconds: 180),
                 width: 76,
@@ -333,8 +339,11 @@ class _HelpSheet extends StatelessWidget {
             iconColor: const Color(0xFF38616A),
             title: 'Voice Commands',
             subtitle:
-                'Hold the mic and say "Camera", "Document"',
-            onTap: () => Navigator.of(context).pop(),
+                'Read the Key words to easily use voice commands',
+            onTap: () {
+              Navigator.of(context).pop();
+              showVoiceCommandsHelp(context);
+            } 
           ),
           const SizedBox(height: 12),
           _HelpTile(
