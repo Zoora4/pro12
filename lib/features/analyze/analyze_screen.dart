@@ -10,7 +10,7 @@ import 'analyze_controller.dart';
 
 // ── Easy-to-tweak position constants ─────────────────────────
 
-const double _kFabBottomOffset = 10.0;
+const double _kFabBottomOffset = 17.0;
 const double _kFabRightOffset  = 16.0;
 const double _kFabLeftOffset   = 16.0;
 
@@ -510,11 +510,11 @@ class _AnalyzeScreenState extends State<AnalyzeScreen>
                   ),
           ),
 
-          // ── Voice Command FAB (bottom-left) ──────────────────
+          // ── Voice Command FAB (above Regional, bottom-right) ──
           if (_loaded)
             Positioned(
-              bottom: _bottomBarHeight + safeBottom + 40 + _kFabBottomOffset,
-              left: _kFabLeftOffset,
+              bottom: _bottomBarHeight + safeBottom + (_showReselect ? 120 : 40) + _kFabBottomOffset,
+              right: _kFabRightOffset,
               child: _VoiceCommandFab(
                 isPlaying: controller.isPlaying,
                 isLoaded: _loaded,
@@ -899,7 +899,7 @@ class _VoiceCommandFabState extends State<_VoiceCommandFab> {
     super.dispose();
   }
 
-void _handleVoiceCommand(String upper) {
+  void _handleVoiceCommand(String upper) {
     if (upper.contains('STOP')) {
       widget.onStop();
       widget.onRefresh();
@@ -917,11 +917,13 @@ void _handleVoiceCommand(String upper) {
                upper.contains('START') ||
                upper.contains('READ')) {
 
+      // Guard: ignore command if document not ready yet
       if (!widget.isLoaded) {
         _showBubble('Still loading…');
         return;
       }
 
+      // 1. Prioritise any highlighted/selected text
       final sel = widget.getSelectedText().trim();
       if (sel.isNotEmpty) {
         widget.onReadSelection(sel);
@@ -930,6 +932,8 @@ void _handleVoiceCommand(String upper) {
         return;
       }
 
+      // 2. Fall back to main player — preserves sentence highlighting
+      //    and always uses controller.sentences (the extracted document text)
       if (!widget.isPlaying) {
         widget.onPlay();
         widget.onRefresh();
@@ -940,10 +944,6 @@ void _handleVoiceCommand(String upper) {
                upper.contains('SWITCH') ||
                upper.contains('CHANGE')) {
       _startVoiceMenu();
-
-    } else if (upper.contains('CLOSE') || upper.contains('BACK')) {
-      // ← new: lets user dismiss any open dialog by voice
-      Navigator.of(context).maybePop();
     }
   }
 
@@ -991,7 +991,10 @@ void _handleVoiceCommand(String upper) {
 
     if (upper.contains('CANCEL') ||
         upper.contains('NEVERMIND') ||
-        upper.contains('NEVER MIND')) {
+        upper.contains('NEVER MIND') ||
+        upper.contains('BACK') ||
+        upper.contains('EXIT') ||
+        upper.contains('TERMINATE')) {
       setState(() {
         _awaitingVoicePick = false;
         _bubbleText        = 'Cancelled.';
@@ -1013,7 +1016,7 @@ void _handleVoiceCommand(String upper) {
     if (idx == null) {
       final retry =
           'Sorry, I didn\'t catch that. '
-          'Say a number between 1 and ${voices.length}, or say cancel.';
+          'Say a number between 1 and ${voices.length}, or say exit.';
 
       setState(() => _bubbleText = retry);
       await tts.speak(retry);
@@ -1107,65 +1110,76 @@ void _handleVoiceCommand(String upper) {
         ? (_spokenText.isEmpty ? 'Listening…' : _spokenText)
         : _bubbleText;
 
-    return SizedBox(
-      width: 240,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          // ── Speech bubble ─────────────────────────────────────
-          AnimatedSwitcher(
-            duration: const Duration(milliseconds: 220),
-            transitionBuilder: (child, anim) => FadeTransition(
-              opacity: anim,
-              child: SizeTransition(
-                sizeFactor: anim,
-                axisAlignment: 1,
-                child: child,
-              ),
+    return Column(
+      mainAxisSize: MainAxisSize.min,
+      crossAxisAlignment: CrossAxisAlignment.end,
+      children: [
+        // ── Speech bubble ─────────────────────────────────────
+        AnimatedSwitcher(
+          duration: const Duration(milliseconds: 220),
+          transitionBuilder: (child, anim) => FadeTransition(
+            opacity: anim,
+            child: SizeTransition(
+              sizeFactor: anim,
+              axisAlignment: 1,
+              child: child,
             ),
-            child: bubbleVisible
-                ? Container(
-                    key: const ValueKey('bubble'),
-                    margin: const EdgeInsets.only(bottom: 8),
-                    padding: const EdgeInsets.symmetric(
-                        horizontal: 14, vertical: 10),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(20),
-                      boxShadow: [
-                        BoxShadow(
-                          color: Colors.black.withOpacity(0.12),
-                          blurRadius: 10,
-                          offset: const Offset(0, 3),
-                        ),
-                      ],
-                      border: Border.all(
-                        color: _awaitingVoicePick
-                            ? const Color(0xFF1D9E75).withOpacity(0.4)
-                            : Colors.transparent,
-                        width: 1.5,
-                      ),
-                    ),
-                    child: Text(
-                      bubbleContent,
-                      textAlign: TextAlign.left,
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w600,
-                        color: _isListening
-                            ? const Color(0xFF1D9E75)
-                            : const Color(0xFF38616A),
-                        decoration: TextDecoration.none,
-                        height: 1.5,
-                      ),
-                    ),
-                  )
-                : const SizedBox.shrink(key: ValueKey('empty')),
           ),
+          child: bubbleVisible
+              ? Align(
+                  key: const ValueKey('bubble'),
+                  alignment: Alignment.centerRight,
+                  child: ConstrainedBox(
+                    constraints: const BoxConstraints(maxWidth: 200),
+                    child: Container(
+                      margin: const EdgeInsets.only(bottom: 10),
+                      padding: const EdgeInsets.symmetric(
+                          horizontal: 14, vertical: 10),
+                      decoration: BoxDecoration(
+                        color: Colors.white,
+                        borderRadius: const BorderRadius.only(
+                          topLeft:     Radius.circular(18),
+                          topRight:    Radius.circular(18),
+                          bottomLeft:  Radius.circular(18),
+                          bottomRight: Radius.circular(4), // tail toward FAB
+                        ),
+                        boxShadow: [
+                          BoxShadow(
+                            color: Colors.black.withOpacity(0.12),
+                            blurRadius: 10,
+                            offset: const Offset(0, 3),
+                          ),
+                        ],
+                        border: Border.all(
+                          color: _awaitingVoicePick
+                              ? const Color(0xFF1D9E75).withOpacity(0.4)
+                              : Colors.grey.shade200,
+                          width: 1.5,
+                        ),
+                      ),
+                      child: Text(
+                        bubbleContent,
+                        textAlign: TextAlign.left,
+                        style: TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w600,
+                          color: _isListening
+                              ? const Color(0xFF1D9E75)
+                              : const Color(0xFF38616A),
+                          decoration: TextDecoration.none,
+                          height: 1.5,
+                        ),
+                      ),
+                    ),
+                  ),
+                )
+              : const SizedBox.shrink(key: ValueKey('empty')),
+        ),
 
-          // ── Mic FAB ───────────────────────────────────────────
-          SizedBox(
+        // ── Mic FAB ───────────────────────────────────────────
+        Align(
+          alignment: Alignment.centerRight,
+          child: SizedBox(
             width: 64,
             height: 64,
             child: GestureDetector(
@@ -1204,29 +1218,8 @@ void _handleVoiceCommand(String upper) {
               ),
             ),
           ),
-
-          // ── Label ─────────────────────────────────────────────
-          const SizedBox(height: 4),
-          SizedBox(
-            height: 14,
-            child: AnimatedSwitcher(
-              duration: const Duration(milliseconds: 200),
-              child: Text(
-                _awaitingVoicePick ? 'Say a number' : 'Tap to talk',
-                key: ValueKey(_awaitingVoicePick),
-                style: TextStyle(
-                  fontSize: 10,
-                  fontWeight: FontWeight.w600,
-                  color: _awaitingVoicePick
-                      ? const Color(0xFF1D9E75)
-                      : Colors.grey.shade500,
-                  decoration: TextDecoration.none,
-                ),
-              ),
-            ),
-          ),
-        ],
-      ),
+        ),
+      ],
     );
   }
 }
@@ -1242,39 +1235,14 @@ class _ReselectFab extends StatelessWidget {
   Widget build(BuildContext context) {
     return GestureDetector(
       onTap: onTap,
-      child: Column(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Material(
-            color: const Color(0xFF38616A),
-            shape: const CircleBorder(),
-            elevation: 4,
-            child: const Padding(
-              padding: EdgeInsets.all(16),
-              child: Icon(Icons.crop_free, color: Colors.white, size: 28),
-            ),
-          ),
-          const SizedBox(height: 4),
-          Container(
-            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
-            decoration: BoxDecoration(
-              color: const Color(0xFF38616A).withOpacity(0.10),
-              borderRadius: BorderRadius.circular(20),
-            ),
-            child: const Text(
-              'Regional',
-              style: TextStyle(
-                fontSize: 11.5,
-                fontWeight: FontWeight.w700,
-                color: Color(0xFF38616A),
-                letterSpacing: 0.3,
-                decoration: TextDecoration.none,
-                decorationColor: Colors.transparent,
-              ),
-            ),
-          ),
-          const SizedBox(height: 43),
-        ],
+      child: Material(
+        color: const Color(0xFF38616A),
+        shape: const CircleBorder(),
+        elevation: 4,
+        child: const Padding(
+          padding: EdgeInsets.all(16),
+          child: Icon(Icons.crop_free, color: Colors.white, size: 30),
+        ),
       ),
     );
   }

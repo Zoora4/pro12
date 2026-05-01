@@ -68,10 +68,35 @@ const _terms = [
   },
 ];
 
-// ── One sentence per section for startLoop() ─────────────────
-List<String> get _termsSentences => [
-  for (final t in _terms) '${t['title']}. ${t['body']}',
-];
+// ── Split each section into individual sentences for ping-pong ─
+List<String> get _termsSentences {
+  final sentences = <String>[];
+  for (final t in _terms) {
+    sentences.add(t['title']!);
+    final bodySentences = t['body']!
+        .split(RegExp(r'(?<=[.!?])\s+'))
+        .map((s) => s.trim())
+        .where((s) => s.isNotEmpty)
+        .toList();
+    sentences.addAll(bodySentences);
+  }
+  return sentences;
+}
+
+// ── Map sentence index back to terms section index ────────────
+int _sectionIndexForSentence(int sentenceIndex) {
+  int count = 0;
+  for (int i = 0; i < _terms.length; i++) {
+    final bodySentences = _terms[i]['body']!
+        .split(RegExp(r'(?<=[.!?])\s+'))
+        .where((s) => s.trim().isNotEmpty)
+        .length;
+    final total = 1 + bodySentences;
+    if (sentenceIndex < count + total) return i;
+    count += total;
+  }
+  return _terms.length - 1;
+}
 
 // ─────────────────────────────────────────────────────────────
 // Terms Screen
@@ -117,8 +142,9 @@ class _TermsScreenState extends State<TermsScreen> {
     _initVoice();
   }
 
-  // ── TTS init ──────────────────────────────────────────────
+  // ── Init TTS once at startup ──────────────────────────────
   Future<void> _initTts() async {
+    await _tts.init();
     if (mounted) setState(() => _ttsReady = true);
   }
 
@@ -143,26 +169,33 @@ class _TermsScreenState extends State<TermsScreen> {
     );
   }
 
+  // ── TTS toggle ────────────────────────────────────────────
   Future<void> _toggleTts() async {
     if (_ttsPlaying) {
-      await _tts.stop();
+      // Clear UI instantly
+      if (mounted) setState(() {
+        _ttsPlaying     = false;
+        _highlightIndex = -1; // ← clear highlight immediately
+      });
+      await _tts.stopLoop(); // ← stops audio player + loop instantly
     } else {
       if (mounted) setState(() => _ttsPlaying = true);
-      await _tts.init();
+
       _tts.startLoop(
         sentences: _termsSentences,
         startIndex: 0,
         speedGetter: () => 1.0,
         onSentenceChanged: (i) {
           if (!mounted) return;
-          setState(() => _highlightIndex = i);
-          _scrollToSection(i);
+          final sectionIdx = _sectionIndexForSentence(i);
+          setState(() => _highlightIndex = sectionIdx);
+          _scrollToSection(sectionIdx);
         },
         onFinished: (completed) {
           if (!mounted) return;
           setState(() {
             _ttsPlaying     = false;
-            _highlightIndex = -1;
+            _highlightIndex = -1; // ← clear highlight on finish
           });
           if (completed && !_hasScrolledToBottom) _scrollToBottom();
         },
@@ -196,7 +229,6 @@ class _TermsScreenState extends State<TermsScreen> {
       setState(() => _micDisplay = t);
     });
 
-    // ── KEY CHANGE: auto-stop mic after command is detected ──
     _cmdSub = SpeechRecognitionService.instance.commandStream.listen((t) {
       if (!mounted) return;
       VoiceCommandService.instance.processText(t);
@@ -205,14 +237,49 @@ class _TermsScreenState extends State<TermsScreen> {
 
     _stateSub = SpeechRecognitionService.instance.stateStream.listen((v) {
       if (!mounted) return;
-      setState(() => _micListening = v);
+      setState(() {
+        _micListening = v;
+        if (!v) _micDisplay = '';
+      });
     });
+  }
+
+  // ── Mic toggle ────────────────────────────────────────────
+  Future<void> _toggleMic() async {
+    if (_micListening) {
+      await SpeechRecognitionService.instance.stopRecording();
+    } else {
+      setState(() => _micDisplay = '');
+      SpeechRecognitionService.instance.startRecording();
+    }
   }
 
   // ── Voice actions ─────────────────────────────────────────
   void _voiceAccept() {
     if (!_hasScrolledToBottom) {
       _scrollToBottom();
+      // ── Show feedback so the user knows why it didn't accept ──
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: const Row(
+            children: [
+              Icon(Icons.info_outline, color: Colors.white, size: 18),
+              SizedBox(width: 10),
+              Expanded(
+                child: Text(
+                  'Please read all terms first — say "Accept" again once done.',
+                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w500),
+                ),
+              ),
+            ],
+          ),
+          backgroundColor: const Color(0xFF38616A),
+          behavior: SnackBarBehavior.floating,
+          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+          margin: const EdgeInsets.fromLTRB(16, 0, 16, 220), // clears the FABs
+          duration: const Duration(seconds: 3),
+        ),
+      );
       return;
     }
     setState(() => _checkboxChecked = true);
@@ -220,11 +287,14 @@ class _TermsScreenState extends State<TermsScreen> {
   }
 
   void _voiceDecline() => _onDecline();
+  void _voiceRead()    => _toggleTts();
 
-  void _voiceRead() => _toggleTts();
-
-  void _voiceStop() async {
-    await _tts.stop();
+  void _voiceStop() {
+    if (mounted) setState(() {
+      _ttsPlaying     = false;
+      _highlightIndex = -1; // ← clear highlight on voice stop
+    });
+    _tts.stopLoop(); // ← stops audio immediately
   }
 
   void _voiceScrollDown() {
@@ -247,7 +317,6 @@ class _TermsScreenState extends State<TermsScreen> {
     );
   }
 
-  // ── Scroll listener ───────────────────────────────────────
   void _onScroll() {
     if (_hasScrolledToBottom) return;
     final pos = _scrollCtrl.position;
@@ -260,8 +329,7 @@ class _TermsScreenState extends State<TermsScreen> {
   void dispose() {
     _scrollCtrl.removeListener(_onScroll);
     _scrollCtrl.dispose();
-    _tts.stop();
-    _tts.resetLoopState();
+    _tts.resetLoopState(); // ← safe in dispose, no callbacks fired
     _cmdSub?.cancel();
     _textSub?.cancel();
     _stateSub?.cancel();
@@ -271,13 +339,9 @@ class _TermsScreenState extends State<TermsScreen> {
   }
 
   Future<void> _onAccept() async {
-    await _tts.stop();
     _tts.resetLoopState();
-
     await SpeechRecognitionService.instance.stopRecording();
-
     VoiceCommandService.instance.unregisterAll();
-
     await markTermsAccepted();
     if (!mounted) return;
     Navigator.of(context).pushReplacement(
@@ -299,7 +363,6 @@ class _TermsScreenState extends State<TermsScreen> {
     );
   }
 
-  // ── Build ─────────────────────────────────────────────────
   @override
   Widget build(BuildContext context) {
     final canAccept = _hasScrolledToBottom && _checkboxChecked;
@@ -377,7 +440,6 @@ class _TermsScreenState extends State<TermsScreen> {
     );
   }
 
-  // ── FABs ──────────────────────────────────────────────────
   Widget _buildFabs() {
     return Padding(
       padding: const EdgeInsets.only(bottom: 200),
@@ -385,7 +447,6 @@ class _TermsScreenState extends State<TermsScreen> {
         mainAxisSize: MainAxisSize.min,
         crossAxisAlignment: CrossAxisAlignment.end,
         children: [
-
           if (_micListening && _micDisplay.isNotEmpty)
             Container(
               margin: const EdgeInsets.only(bottom: 6, right: 4),
@@ -404,14 +465,8 @@ class _TermsScreenState extends State<TermsScreen> {
               ),
             ),
 
-          // ── KEY CHANGE: tap to start, auto-stops when command detected ──
           GestureDetector(
-            onTap: () {
-              if (!_micListening) {
-                setState(() => _micDisplay = '');
-                SpeechRecognitionService.instance.startRecording();
-              }
-            },
+            onTap: _toggleMic,
             child: Column(
               mainAxisSize: MainAxisSize.min,
               children: [
@@ -443,7 +498,7 @@ class _TermsScreenState extends State<TermsScreen> {
                 ),
                 const SizedBox(height: 4),
                 Text(
-                  _micListening ? 'Listening...' : 'Tap',
+                  _micListening ? 'Cancel' : 'Tap',
                   style: TextStyle(
                     fontSize: 11,
                     fontWeight: FontWeight.w700,
@@ -503,7 +558,6 @@ class _TermsScreenState extends State<TermsScreen> {
     );
   }
 
-  // ── Header ────────────────────────────────────────────────
   Widget _buildHeader() {
     return Container(
       width: double.infinity,
@@ -549,8 +603,7 @@ class _TermsScreenState extends State<TermsScreen> {
           ),
           const SizedBox(height: 10),
           Container(
-            padding:
-                const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+            padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
             decoration: BoxDecoration(
               color: Colors.white.withOpacity(0.15),
               borderRadius: BorderRadius.circular(20),
@@ -576,14 +629,12 @@ class _TermsScreenState extends State<TermsScreen> {
     );
   }
 
-  // ── Footer ────────────────────────────────────────────────
   Widget _buildFooter(bool canAccept) {
     return Container(
       padding: const EdgeInsets.fromLTRB(20, 16, 20, 20),
       decoration: BoxDecoration(
         color: Colors.white,
-        borderRadius:
-            const BorderRadius.vertical(top: Radius.circular(20)),
+        borderRadius: const BorderRadius.vertical(top: Radius.circular(20)),
         boxShadow: [
           BoxShadow(
             color: Colors.black.withOpacity(0.07),
@@ -597,8 +648,7 @@ class _TermsScreenState extends State<TermsScreen> {
         children: [
           GestureDetector(
             onTap: _hasScrolledToBottom
-                ? () => setState(
-                    () => _checkboxChecked = !_checkboxChecked)
+                ? () => setState(() => _checkboxChecked = !_checkboxChecked)
                 : null,
             child: AnimatedOpacity(
               duration: const Duration(milliseconds: 200),
@@ -663,8 +713,8 @@ class _TermsScreenState extends State<TermsScreen> {
                 ),
                 child: const Text(
                   'Accept & Continue',
-                  style: TextStyle(
-                      fontSize: 16, fontWeight: FontWeight.w700),
+                  style:
+                      TextStyle(fontSize: 16, fontWeight: FontWeight.w700),
                 ),
               ),
             ),
@@ -700,7 +750,7 @@ class _TermsScreenState extends State<TermsScreen> {
 }
 
 // ─────────────────────────────────────────────────────────────
-// Individual terms section — supports highlight state
+// Individual terms section
 // ─────────────────────────────────────────────────────────────
 class _TermsSection extends StatelessWidget {
   final String title;
@@ -758,10 +808,10 @@ class _TermsSection extends StatelessWidget {
               Expanded(
                 child: Text(
                   title,
-                  style: TextStyle(
+                  style: const TextStyle(
                     fontSize: 14,
                     fontWeight: FontWeight.w700,
-                    color: highlighted ? _accent : _accent,
+                    color: _accent,
                   ),
                 ),
               ),
@@ -807,7 +857,8 @@ class _DeclineDialog extends StatelessWidget {
           SizedBox(width: 10),
           Text(
             'Are you sure?',
-            style: TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
+            style:
+                TextStyle(fontSize: 17, fontWeight: FontWeight.w700),
           ),
         ],
       ),
